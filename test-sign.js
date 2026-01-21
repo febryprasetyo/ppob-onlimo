@@ -1,8 +1,8 @@
 const crypto = require("crypto");
 
-const DF_USER = "guyokaopwXXg";
-const DF_KEY = "dev-520cc880-f0e8-11f0-95db-8f11f872b3de";
-const CUSTOMER_NO = "56241047945";
+const DF_USER = "";
+const DF_KEY = "";
+const CUSTOMER_NO = "";
 
 const formulas = [
   { name: "standard (user+key+cust)", base: DF_USER + DF_KEY + CUSTOMER_NO },

@@ -1,8 +1,8 @@
 const crypto = require("crypto");
 
-const DF_USER = "guyokaopwXXg";
-const DF_KEY = "dev-520cc880-f0e8-11f0-95db-8f11f872b3de";
-const CUSTOMER_NO = "1234567890"; // Testing ID for PLN Postpaid in Dev Mode
+const DF_USER = "";
+const DF_KEY = "";
+const CUSTOMER_NO = "";
 
 async function testInquiryOfficial() {
     const sign = crypto.createHash("md5").update(DF_USER + DF_KEY + CUSTOMER_NO).digest("hex");

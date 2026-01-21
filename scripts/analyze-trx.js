@@ -4,9 +4,9 @@ const config = {
   connection: {
     host: 'localhost',
     port: 5433,
-    user: 'dbonlimo',
-    password: 'oms001',
-    database: 'ppob_db',
+    user: '',
+    password: '',
+    database: '',
   },
 };
 

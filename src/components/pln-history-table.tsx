@@ -23,6 +23,7 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
+import { HistorySummaryCards } from "./history-summary-cards";
 
 interface TrxData {
   ref_id: string;
@@ -47,6 +48,22 @@ export function PlnHistoryTable({ data }: PlnHistoryTableProps) {
   const [selectedTrx, setSelectedTrx] = useState<TrxData | null>(null);
   const [search, setSearch] = useState("");
   const [waFilter, setWaFilter] = useState("all");
+  const [monthFilter, setMonthFilter] = useState("all");
+
+  const availableMonths = Array.from(
+    new Set(
+      data.map((trx) => {
+        const date = new Date(trx.created_at);
+        return `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, "0")}`;
+      })
+    )
+  ).sort().reverse();
+
+  const formatMonthLabel = (monthYear: string) => {
+    const [year, month] = monthYear.split("-");
+    const date = new Date(parseInt(year), parseInt(month) - 1);
+    return date.toLocaleString("id-ID", { month: "long", year: "numeric" });
+  };
   const router = useRouter();
   const checkedRef = useRef<Set<string>>(new Set());
 
@@ -73,36 +90,7 @@ export function PlnHistoryTable({ data }: PlnHistoryTableProps) {
     }
   };
 
-  useEffect(() => {
-    const pendingTrx = data.filter(t => t.status === "PENDING" && !checkedRef.current.has(t.ref_id));
-    
-    if (pendingTrx.length > 0) {
-        const checkStatus = async () => {
-            let hasGlobalChanges = false;
-            
-            for (const trx of pendingTrx) {
-                checkedRef.current.add(trx.ref_id);
-                try {
-                    console.log("Auto-checking status for:", trx.ref_id);
-                    const res = await fetch(`/api/trx/check-status?type=PLN&ref_id=${trx.ref_id}`);
-                    const json = await res.json();
-                    
-                    if (json.success && json.status !== "PENDING") {
-                        hasGlobalChanges = true;
-                    }
-                } catch (e) {
-                    console.error("Auto check failed", e);
-                }
-            }
-
-            if (hasGlobalChanges) {
-                router.refresh();
-            }
-        };
-
-        checkStatus();
-    }
-  }, [data, router]);
+  // useEffect polling removed to disable auto-refresh
 
   const filteredData = data.filter((trx) => {
     const matchesSearch = trx.nama_stasiun.toLowerCase().includes(search.toLowerCase()) || 
@@ -117,11 +105,26 @@ export function PlnHistoryTable({ data }: PlnHistoryTableProps) {
       matchesFilter = trx.status === "FAILED";
     }
 
-    return matchesSearch && matchesFilter;
+    let matchesMonth = true;
+    if (monthFilter !== "all") {
+      const trxDate = new Date(trx.created_at);
+      const trxMonthYear = `${trxDate.getFullYear()}-${String(trxDate.getMonth() + 1).padStart(2, "0")}`;
+      matchesMonth = trxMonthYear === monthFilter;
+    }
+
+    return matchesSearch && matchesFilter && matchesMonth;
   });
+
+  const stats = {
+    total: filteredData.length,
+    success: filteredData.filter(h => h.status === "SUCCESS").length,
+    pending: filteredData.filter(h => h.status === "PENDING").length,
+    failed: filteredData.filter(h => h.status === "FAILED").length,
+  };
 
   return (
     <div className="space-y-6">
+      <HistorySummaryCards stats={stats} />
       {/* Search and Filter UI */}
       <div className="flex flex-col md:flex-row gap-4 mb-4">
         <div className="relative flex-1 group">
@@ -134,14 +137,32 @@ export function PlnHistoryTable({ data }: PlnHistoryTableProps) {
           <Search className="absolute left-5 top-1/2 -translate-y-1/2 h-5 w-5 text-slate-300 group-focus-within:text-blue-500 transition-colors" />
         </div>
         <div className="w-full md:w-[240px]">
+          <Select value={monthFilter} onValueChange={setMonthFilter}>
+            <SelectTrigger className="h-14 rounded-2xl bg-white border-slate-100 shadow-sm px-6 font-bold text-slate-600 focus:ring-4 focus:ring-blue-500/5">
+              <div className="flex items-center gap-3">
+                <Filter className="h-4 w-4 text-slate-400" />
+                <SelectValue placeholder="Pilih Bulan" />
+              </div>
+            </SelectTrigger>
+            <SelectContent className="rounded-2xl border-none shadow-2xl p-2 bg-white">
+              <SelectItem value="all" className="rounded-xl font-bold text-slate-600 focus:bg-blue-50 focus:text-blue-600 py-3">Semua Bulan</SelectItem>
+              {availableMonths.map((m) => (
+                <SelectItem key={m} value={m} className="rounded-xl font-bold text-slate-600 focus:bg-blue-50 focus:text-blue-600 py-3">
+                  {formatMonthLabel(m)}
+                </SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+        </div>
+        <div className="w-full md:w-[240px]">
           <Select value={waFilter} onValueChange={setWaFilter}>
-            <SelectTrigger className="h-14 rounded-2xl bg-white/50 backdrop-blur-md border-slate-100 shadow-sm px-6 font-bold text-slate-600 focus:ring-4 focus:ring-blue-500/5">
+            <SelectTrigger className="h-14 rounded-2xl bg-white border-slate-100 shadow-sm px-6 font-bold text-slate-600 focus:ring-4 focus:ring-blue-500/5">
               <div className="flex items-center gap-3">
                 <Filter className="h-4 w-4 text-slate-400" />
                 <SelectValue placeholder="Status WA" />
               </div>
             </SelectTrigger>
-            <SelectContent className="rounded-2xl border-none shadow-2xl p-2">
+            <SelectContent className="rounded-2xl border-none shadow-2xl p-2 bg-white">
               <SelectItem value="all" className="rounded-xl font-bold text-slate-600 focus:bg-blue-50 focus:text-blue-600 py-3">Semua Status</SelectItem>
               <SelectItem value="sent" className="rounded-xl font-bold text-slate-600 focus:bg-blue-50 focus:text-blue-600 py-3">Terkirim</SelectItem>
               <SelectItem value="not_sent" className="rounded-xl font-bold text-slate-600 focus:bg-blue-50 focus:text-blue-600 py-3">Belum Terkirim</SelectItem>

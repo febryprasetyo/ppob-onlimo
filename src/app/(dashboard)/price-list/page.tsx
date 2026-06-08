@@ -1,16 +1,30 @@
 "use client";
 
 import { useState, useEffect, useMemo } from "react";
+import { useRouter, useSearchParams, usePathname } from "next/navigation";
 import { Card, CardContent } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { Badge } from "@/components/ui/badge";
+import { 
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
 import { Search, RefreshCw, AlertCircle, Database, X } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
 import { getPriceList, syncPriceList } from "@/services/digiflazz";
 
 export default function PriceListPage() {
+  const router = useRouter();
+  const searchParams = useSearchParams();
+  const pathname = usePathname();
+  
+  const initialCategory = searchParams.get("category");
+
   const [prices, setPrices] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
   const [syncing, setSyncing] = useState(false);
@@ -18,8 +32,21 @@ export default function PriceListPage() {
   const [search, setSearch] = useState("");
   
   // States for Filtering
-  const [selectedCategory, setSelectedCategory] = useState<string | null>(null);
+  const [selectedCategory, setSelectedCategory] = useState<string | null>(initialCategory);
   const [selectedBrand, setSelectedBrand] = useState<string | null>(null);
+
+  const updateCategory = (cat: string | null) => {
+    setSelectedCategory(cat);
+    setSelectedBrand(null); // Reset brand when category changes
+    
+    const params = new URLSearchParams(searchParams.toString());
+    if (cat) {
+      params.set("category", cat);
+    } else {
+      params.delete("category");
+    }
+    router.replace(`${pathname}?${params.toString()}`, { scroll: false });
+  };
 
   const fetchPrices = async () => {
     setLoading(true);
@@ -90,8 +117,7 @@ export default function PriceListPage() {
   };
 
   const clearFilters = () => {
-    setSelectedCategory(null);
-    setSelectedBrand(null);
+    updateCategory(null);
     setSearch("");
   };
 
@@ -136,32 +162,29 @@ export default function PriceListPage() {
         </div>
 
         {/* Category Tabs */}
-        <div className="flex overflow-x-auto no-scrollbar p-2 gap-2">
-          <button
-            onClick={() => { setSelectedCategory(null); setSelectedBrand(null); }}
-            className={cn(
-              "px-8 py-4 rounded-[1.2rem] text-[10px] font-black uppercase tracking-widest whitespace-nowrap transition-all duration-500 border",
-              !selectedCategory 
-                ? "bg-white text-blue-600 shadow-lg border-white ring-4 ring-blue-500/5" 
-                : "text-slate-400 hover:text-slate-600 border-transparent hover:bg-white/50"
-            )}
-          >
-            Semua Satuan
-          </button>
-          {categories.map((cat) => (
-            <button
-              key={cat}
-              onClick={() => { setSelectedCategory(cat); setSelectedBrand(null); }}
-              className={cn(
-                "px-8 py-4 rounded-[1.2rem] text-[10px] font-black uppercase tracking-widest whitespace-nowrap transition-all duration-500 border",
-                selectedCategory === cat 
-                  ? "bg-white text-blue-600 shadow-lg border-white ring-4 ring-blue-500/5" 
-                  : "text-slate-400 hover:text-slate-600 border-transparent hover:bg-white/50"
-              )}
+        {/* Category Selection - Dropdown for better accessibility */}
+        <div className="p-2">
+            <Select 
+              value={selectedCategory || "all"} 
+              onValueChange={(val) => updateCategory(val === "all" ? null : val)}
             >
-              {cat}
-            </button>
-          ))}
+              <SelectTrigger className="h-16 rounded-[1.8rem] bg-white border-slate-100 shadow-sm px-6 font-bold text-slate-600 focus:ring-4 focus:ring-blue-500/5 text-lg">
+                <div className="flex items-center gap-3">
+                  <Database className="h-5 w-5 text-blue-500" />
+                  <SelectValue placeholder="Pilih Kategori Produk..." />
+                </div>
+              </SelectTrigger>
+              <SelectContent className="max-h-[400px] rounded-2xl border-none shadow-2xl p-2 bg-white">
+                <SelectItem value="all" className="rounded-xl font-bold text-slate-600 focus:bg-blue-50 focus:text-blue-600 py-3 pl-4">
+                  Semua Kategori
+                </SelectItem>
+                {categories.map((cat) => (
+                  <SelectItem key={cat} value={cat} className="rounded-xl font-bold text-slate-600 focus:bg-blue-50 focus:text-blue-600 py-3 pl-4">
+                    {cat}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
         </div>
 
         {/* Brand Horizontal Tags (Visible if Category Selected) */}

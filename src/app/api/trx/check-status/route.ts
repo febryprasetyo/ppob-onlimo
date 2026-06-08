@@ -24,7 +24,7 @@ export async function GET(req: Request) {
       if (trx) refId = trx.ref_id;
     }
 
-    if (!trx) {
+    if (!trx || !refId) {
       return NextResponse.json({ error: "Transaction not found" }, { status: 404 });
     }
 
@@ -49,10 +49,13 @@ export async function GET(req: Request) {
     console.log(`<<< CHECK STATUS RESPONSE (${type}):`, JSON.stringify(resJson, null, 2));
 
     // Update DB if status changed
+    // NOTE: RC 00 = Success, RC 01/02 = Failed, RC 03 = Pending
     if (data.rc === '00' || data.rc === '01' || data.rc === '02') {
       let finalStatus = "PENDING";
       if (data.rc === '00') finalStatus = "SUCCESS";
       if (data.rc === '01' || data.rc === '02') finalStatus = "FAILED";
+
+      console.log(`[Check Status] Updating ${refId} status to ${finalStatus} (RC: ${data.rc})`);
 
       const updateData: any = {
         status: finalStatus,

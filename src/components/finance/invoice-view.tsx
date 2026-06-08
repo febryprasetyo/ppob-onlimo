@@ -4,6 +4,7 @@ import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Printer, ArrowLeft } from "lucide-react";
 import Link from "next/link";
+import { cn } from "@/lib/utils";
 
 interface InvoiceItem {
   id: number;
@@ -50,7 +51,7 @@ export function InvoiceView({ invoice }: { invoice: Invoice }) {
         <div className="flex justify-between items-start border-b-4 border-slate-900 pb-6 mb-8">
           <div>
             <h1 className="text-3xl font-black tracking-tighter text-slate-900 mb-1">ONLIMO OPERATIONAL</h1>
-            <p className="text-sm font-bold uppercase tracking-widest text-slate-500">PPOB Internal Management System</p>
+            <p className="text-sm font-bold uppercase tracking-widest text-slate-500">Internal Management System</p>
           </div>
           <div className="text-right">
             <h2 className="text-xl font-bold uppercase">PENGAJUAN DEPOSIT</h2>
@@ -63,7 +64,6 @@ export function InvoiceView({ invoice }: { invoice: Invoice }) {
           <div>
             <p className="text-[10px] font-black uppercase text-slate-400 mb-1">Diajukan Kepada:</p>
             <p className="font-bold text-lg">Finance Department</p>
-            <p className="text-sm">KLHK Data Center Operational</p>
           </div>
           <div className="text-right">
             <p className="text-[10px] font-black uppercase text-slate-400 mb-1">Periode Anggaran:</p>
@@ -96,22 +96,26 @@ export function InvoiceView({ invoice }: { invoice: Invoice }) {
             </thead>
             <tbody className="divide-y divide-slate-100">
               {invoice.items.map((item) => (
-                <tr key={item.id}>
+                <tr key={item.id} className={item.category === 'UNIQUE_CODE' ? "bg-blue-50/50" : ""}>
                   <td className="px-6 py-4">
-                    <p className="font-bold text-slate-700">{item.description}</p>
+                    <p className={cn("font-bold", item.category === 'UNIQUE_CODE' ? "text-blue-600" : "text-slate-700")}>{item.description}</p>
                     <p className="text-[10px] text-slate-400 font-mono">Kategori: {item.category}</p>
+                    {item.category === "ADMIN" && (
+                      <p className="text-[10px] text-rose-500/80 italic mt-0.5 font-medium">* Belum termasuk 3 digit unik nomor VA pembayaran</p>
+                    )}
                   </td>
                   <td className="px-6 py-4 text-center font-bold">{item.quantity}</td>
                   <td className="px-6 py-4 text-right">Rp {Number(item.unit_price).toLocaleString("id-ID")}</td>
-                  <td className="px-6 py-4 text-right font-black">Rp {Number(item.total_price).toLocaleString("id-ID")}</td>
+                  <td className={cn("px-6 py-4 text-right font-black", item.category === 'UNIQUE_CODE' ? "text-blue-600" : "")}>Rp {Number(item.total_price).toLocaleString("id-ID")}</td>
                 </tr>
               ))}
             </tbody>
             <tfoot className="bg-slate-900 text-white">
               <tr>
                 <td colSpan={3} className="px-6 py-4 text-right font-bold uppercase tracking-widest text-[11px]">Total Dana Diajukan</td>
-                <td className="px-6 py-4 text-right text-xl font-black">
+                <td className="px-6 py-4 text-right text-xl font-black whitespace-nowrap">
                   Rp {Number(invoice.total_amount).toLocaleString("id-ID")}
+                  
                 </td>
               </tr>
             </tfoot>
@@ -120,7 +124,7 @@ export function InvoiceView({ invoice }: { invoice: Invoice }) {
 
         {/* Terbilang */}
         <div className="mb-12 p-4 bg-slate-50 border-l-4 border-slate-300 italic text-sm">
-          "Dana tersebut akan digunakan untuk memenuhi kebutuhan operasional PPOB token listrik dan paket data modem monitoring periode {monthNames[periodDate.getMonth()]} {periodDate.getFullYear()}."
+          "Dana tersebut akan digunakan untuk memenuhi kebutuhan operasional token listrik dan paket data modem monitoring periode {monthNames[periodDate.getMonth()]} {periodDate.getFullYear()}."
         </div>
 
         {/* Signatures */}
@@ -128,13 +132,13 @@ export function InvoiceView({ invoice }: { invoice: Invoice }) {
           <div>
             <p className="mb-20 text-xs font-bold uppercase text-slate-400">Dibuat Oleh,</p>
             <div className="border-b border-slate-900 w-40 mx-auto"></div>
-            <p className="mt-2 font-bold text-sm">Operational Admin</p>
+            <p className="mt-2 font-bold text-sm">Operational</p>
           </div>
           <div></div>
           <div>
             <p className="mb-20 text-xs font-bold uppercase text-slate-400">Menyetujui,</p>
             <div className="border-b border-slate-900 w-40 mx-auto"></div>
-            <p className="mt-2 font-bold text-sm">Finance Manager</p>
+            <p className="mt-2 font-bold text-sm">Koordinator</p>
           </div>
         </div>
 

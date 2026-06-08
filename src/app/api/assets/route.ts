@@ -48,7 +48,9 @@ export async function GET(req: Request) {
       }
     });
 
-    const result = Object.values(stationsMap);
+    const result = Object.values(stationsMap).sort((a: any, b: any) => 
+      a.nama_stasiun.localeCompare(b.nama_stasiun)
+    );
     return NextResponse.json({ success: true, data: result });
   } catch (error: any) {
     return NextResponse.json({ error: error.message }, { status: 500 });

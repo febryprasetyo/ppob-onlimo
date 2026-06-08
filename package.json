@@ -3,10 +3,11 @@
   "version": "0.1.0",
   "private": true,
   "scripts": {
-    "dev": "next dev -p 3050",
+    "dev": "next dev -p 3052",
     "build": "next build",
     "start": "next start -p 3050",
-    "lint": "eslint"
+    "lint": "eslint",
+    "deploy": "./deploy-pm2.sh"
   },
   "dependencies": {
     "@radix-ui/react-checkbox": "^1.3.3",

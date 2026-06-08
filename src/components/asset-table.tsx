@@ -1,6 +1,7 @@
 "use client";
 
 import { useState, useRef, useEffect } from "react";
+import { useRouter } from "next/navigation";
 import {
   Table,
   TableBody,
@@ -27,7 +28,12 @@ import {
   RefreshCw,
   Download,
   Image as ImageIcon,
-  Eye
+  Eye,
+  Settings2,
+  PlayCircle,
+  PauseCircle,
+  Hash,
+  ListRestart
 } from "lucide-react";
 import {
   Dialog,
@@ -41,6 +47,9 @@ import {
 import { Badge } from "@/components/ui/badge";
 import { cn } from "@/lib/utils";
 import { toPng } from "html-to-image";
+import { Checkbox } from "@/components/ui/checkbox";
+import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
 
 interface Asset {
   id: number;
@@ -56,12 +65,14 @@ interface Asset {
 interface AssetTableProps {
   assets: Asset[];
   type: "PLN" | "ORBIT";
+  onSuccess?: () => void;
 }
 
-export function AssetTable({ assets, type }: AssetTableProps) {
+export function AssetTable({ assets, type, onSuccess }: AssetTableProps) {
   // ... existing state ...
   
   // (Include existing state here in ReplacementContent to ensure correctly replaced)
+  const router = useRouter();
   const [loading, setLoading] = useState<number | null>(null);
   const [checkingStatus, setCheckingStatus] = useState(false);
   const [downloading, setDownloading] = useState(false);
@@ -69,6 +80,17 @@ export function AssetTable({ assets, type }: AssetTableProps) {
   const [showDebug, setShowDebug] = useState(false);
   
   const receiptRef = useRef<HTMLDivElement>(null);
+  
+  // Bulk Transaction States
+  const [selectedIds, setSelectedIds] = useState<number[]>([]);
+  const [isBulkOpen, setIsBulkOpen] = useState(false);
+  const [bulkInterval, setBulkInterval] = useState(10);
+  const [bulkStatus, setBulkStatus] = useState<"idle" | "running" | "paused" | "completed">("idle");
+  const [bulkProgress, setBulkProgress] = useState(0); // Current index
+  const [bulkResults, setBulkResults] = useState<Record<number, { status: "pending" | "success" | "failed", message: string }>>({});
+  const [currentProcessingId, setCurrentProcessingId] = useState<number | null>(null);
+  const [isPaused, setIsPaused] = useState(false);
+  const abortControllerRef = useRef<AbortController | null>(null);
   
   // Stats for result modal
   const [resultModal, setResultModal] = useState<{
@@ -101,10 +123,11 @@ export function AssetTable({ assets, type }: AssetTableProps) {
         body: JSON.stringify({ asset_id: assetId, sku }),
       });
       const json = await res.json();
-      
+
       if (json.success) {
         setOpenDialog(null);
         handleTransactionResponse(json, asset.nama_stasiun, type === "PLN" ? asset.meter_number : asset.phone_number);
+        router.refresh(); // Soft refresh
       } else {
         setResultModal({
           open: true,
@@ -166,17 +189,8 @@ export function AssetTable({ assets, type }: AssetTableProps) {
   };
 
   // Auto-check effect when modal is open and status is pending
-  useEffect(() => {
-    let interval: NodeJS.Timeout;
-
-    if (resultModal.open && resultModal.status === "pending" && resultModal.ref_id) {
-      interval = setInterval(() => {
-        handleCheckStatus();
-      }, 5000); // Check every 5 seconds
-    }
-
-    return () => clearInterval(interval);
-  }, [resultModal.open, resultModal.status, resultModal.ref_id]);
+  // Auto-check effect REMOVED
+  // useEffect logic has been removed to disable auto-reload behaviors.
 
   const handleCheckStatus = async () => {
     if (!resultModal.ref_id) return;
@@ -267,7 +281,41 @@ export function AssetTable({ assets, type }: AssetTableProps) {
     { name: "Orbit 20GB", sku: "orbit20" },
   ];
 
-  const products = type === "PLN" ? plnProducts : orbitProducts;
+  const xlProducts = [
+    { name: "XL 15GB", sku: "xl15" },
+  ];
+
+  /* 
+    Updated Logic:
+    If asset has default_sku, ONLY show that specific product.
+    If not found in predefined lists, show it as a generic product using the sku as name.
+  */
+  const getProductsForAsset = (asset: Asset) => {
+    // 1. Determine the candidate list
+    let candidates = orbitProducts;
+    if (type === "PLN") {
+        candidates = plnProducts;
+    } else if (asset.default_sku && asset.default_sku.toLowerCase().includes("xl")) {
+        candidates = xlProducts;
+    }
+
+    // 2. If default_sku is set, filter to only that one
+    if (asset.default_sku) {
+        // Try to find it in the candidates or other lists (in case of logic mismatch)
+        const allKnown = [...plnProducts, ...orbitProducts, ...xlProducts];
+        const found = allKnown.find(p => p.sku === asset.default_sku);
+        
+        if (found) {
+            return [found];
+        } else {
+            // Support arbitrary SKU from DB even if not in hardcoded list
+            return [{ name: asset.default_sku.toUpperCase(), sku: asset.default_sku }];
+        }
+    }
+    
+    // 3. Fallback (should not happen if all assets have defaults, but kept for safety)
+    return candidates;
+  };
 
   const getModalTheme = () => {
     switch (resultModal.status) {
@@ -280,13 +328,312 @@ export function AssetTable({ assets, type }: AssetTableProps) {
 
   const theme = getModalTheme();
 
+  const handleToggleSelect = (id: number) => {
+    setSelectedIds(prev => 
+      prev.includes(id) ? prev.filter(i => i !== id) : [...prev, id]
+    );
+  };
+
+  const handleSelectAll = (checked: boolean) => {
+    if (checked) {
+      setSelectedIds(assets.map(a => a.id));
+    } else {
+      setSelectedIds([]);
+    }
+  };
+
+  const startBulkTransaction = async () => {
+    setBulkStatus("running");
+    setBulkResults({});
+    setBulkProgress(0);
+    setIsPaused(false);
+    abortControllerRef.current = new AbortController();
+
+    const assetsToProcess = assets.filter(a => selectedIds.includes(a.id));
+    
+    for (let i = 0; i < assetsToProcess.length; i++) {
+      if (isPaused) {
+        setBulkStatus("paused");
+        while (isPaused) {
+          await new Promise(r => setTimeout(r, 500));
+        }
+        setBulkStatus("running");
+      }
+
+      const asset = assetsToProcess[i];
+      setBulkProgress(i);
+      setCurrentProcessingId(asset.id);
+      
+      // Update result state to show it's processing
+      setBulkResults(prev => ({
+        ...prev,
+        [asset.id]: { status: "pending", message: "Sedang diproses..." }
+      }));
+
+      try {
+        const sku = asset.default_sku || (type === "PLN" ? "pln100" : "orbit20");
+        const endpoint = type === "PLN" ? "/api/trx/pln" : "/api/trx/orbit";
+
+        const res = await fetch(endpoint, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ asset_id: asset.id, sku }),
+          signal: abortControllerRef.current?.signal,
+        });
+        const json = await res.json();
+
+        if (json.success) {
+          const data = json.data || {};
+          let status: "success" | "pending" | "failed" = "failed";
+          if (data.rc === "00") status = "success";
+          else if (data.rc === "03") status = "pending";
+
+          setBulkResults(prev => ({
+            ...prev,
+            [asset.id]: { 
+              status: status as any, 
+              message: data.message || (status === "success" ? "Berhasil" : "Diproses")
+            }
+          }));
+        } else {
+          setBulkResults(prev => ({
+            ...prev,
+            [asset.id]: { status: "failed", message: json.error || "Gagal" }
+          }));
+        }
+      } catch (error: any) {
+        if (error.name === 'AbortError') break;
+        setBulkResults(prev => ({
+          ...prev,
+          [asset.id]: { status: "failed", message: "Kesalahan koneksi" }
+        }));
+      }
+
+      // Wait for interval if not the last item
+      if (i < assetsToProcess.length - 1) {
+        let countdown = bulkInterval;
+        while (countdown > 0) {
+          if (isPaused) {
+            setBulkStatus("paused");
+            while (isPaused) {
+              await new Promise(r => setTimeout(r, 500));
+            }
+            setBulkStatus("running");
+          }
+          
+          setBulkResults(prev => ({
+            ...prev,
+            [asset.id]: { 
+              ...prev[asset.id], 
+              message: `${prev[asset.id].message} (Menunggu ${countdown}s...)` 
+            }
+          }));
+          
+          await new Promise(r => setTimeout(r, 1000));
+          countdown--;
+        }
+      }
+    }
+
+    setBulkStatus("completed");
+    setCurrentProcessingId(null);
+    router.refresh();
+  };
+
+  const stopBulkTransaction = () => {
+    abortControllerRef.current?.abort();
+    setBulkStatus("idle");
+    setCurrentProcessingId(null);
+  };
+
   return (
+    <div className="space-y-6">
+      {/* BULK SELECTION CONTROL BAR */}
+      {selectedIds.length > 0 && (
+        <div className="animate-in slide-in-from-top-4 duration-500 flex items-center justify-between p-6 bg-slate-900 rounded-[2rem] border border-slate-800 shadow-2xl">
+          <div className="flex items-center gap-6 pl-4">
+            <div className="flex -space-x-3">
+              {assets.filter(a => selectedIds.includes(a.id)).slice(0, 3).map((a, i) => (
+                <div key={a.id} className="h-10 w-10 rounded-full bg-blue-600 border-2 border-slate-900 flex items-center justify-center text-[10px] font-black text-white uppercase" style={{ zIndex: 10 - i }}>
+                  {a.nama_stasiun.substring(0, 2)}
+                </div>
+              ))}
+              {selectedIds.length > 3 && (
+                <div className="h-10 w-10 rounded-full bg-slate-800 border-2 border-slate-900 flex items-center justify-center text-[10px] font-black text-white" style={{ zIndex: 5 }}>
+                  +{selectedIds.length - 3}
+                </div>
+              )}
+            </div>
+            <div className="flex flex-col">
+              <span className="text-sm font-black text-white uppercase tracking-widest">{selectedIds.length} Stasiun Terpilih</span>
+              <span className="text-[10px] text-slate-400 font-bold uppercase tracking-tighter">Opsi transaksi massal aktif</span>
+            </div>
+          </div>
+
+          <div className="flex items-center gap-4">
+            <Button 
+                variant="ghost" 
+                onClick={() => setSelectedIds([])}
+                className="text-slate-400 font-black uppercase text-[10px] tracking-widest hover:text-white hover:bg-white/10 px-6 rounded-xl"
+            >
+                Batalkan
+            </Button>
+            
+            <Dialog open={isBulkOpen} onOpenChange={setIsBulkOpen}>
+              <DialogTrigger asChild>
+                <Button className="h-12 px-8 rounded-2xl premium-gradient text-white font-black uppercase text-[10px] tracking-[0.2em] shadow-xl shadow-blue-600/20 active:scale-95 transition-all flex gap-3">
+                  <PlayCircle className="h-4 w-4" />
+                  Mulai Transaksi Massal
+                </Button>
+              </DialogTrigger>
+              <DialogContent className="sm:max-w-[600px] rounded-[3rem] p-0 overflow-hidden border-none shadow-2xl bg-white">
+                <div className="p-10 bg-slate-900 text-white relative overflow-hidden">
+                  <div className="absolute top-0 right-0 p-10 opacity-5">
+                    <ListRestart className="h-64 w-64" />
+                  </div>
+                  <DialogHeader className="relative z-10">
+                    <DialogTitle className="text-3xl font-black uppercase tracking-tight flex items-center gap-4">
+                      <div className="p-3 bg-blue-600 rounded-2xl shadow-xl shadow-blue-500/20">
+                        <ListRestart className="h-6 w-6" />
+                      </div>
+                      Transaksi Massal
+                    </DialogTitle>
+                    <DialogDescription className="text-slate-400 font-bold mt-2 uppercase text-[10px] tracking-widest">
+                      Konfigurasi & Monitoring Antrian Transaksi
+                    </DialogDescription>
+                  </DialogHeader>
+                </div>
+
+                <div className="p-10 space-y-8 max-h-[70vh] overflow-y-auto no-scrollbar">
+                  {/* Settings */}
+                  <div className="grid grid-cols-2 gap-6 p-6 bg-slate-50 rounded-[2rem] border border-slate-100">
+                    <div className="space-y-3">
+                      <Label className="text-[10px] font-black uppercase tracking-widest text-slate-400 ml-1">Interval Aman (Detik)</Label>
+                      <div className="relative">
+                        <Hash className="absolute left-4 top-1/2 -translate-y-1/2 h-4 w-4 text-slate-300" />
+                        <Input 
+                          type="number" 
+                          value={bulkInterval}
+                          onChange={(e) => setBulkInterval(parseInt(e.target.value) || 0)}
+                          className="h-12 pl-12 rounded-xl border-slate-200 focus:ring-blue-500 font-black text-lg"
+                        />
+                      </div>
+                    </div>
+                    <div className="space-y-3">
+                      <Label className="text-[10px] font-black uppercase tracking-widest text-slate-400 ml-1">Total Antrian</Label>
+                      <div className="h-12 flex items-center px-6 bg-white rounded-xl border border-slate-200 font-black text-lg text-slate-800">
+                        {selectedIds.length} Unit
+                      </div>
+                    </div>
+                  </div>
+
+                  {/* Progress List */}
+                  <div className="space-y-3">
+                    <div className="flex justify-between items-center px-1">
+                      <span className="text-[10px] font-black uppercase tracking-[0.2em] text-slate-400">Status Monitoring</span>
+                      {bulkStatus === "running" && (
+                        <span className="text-[10px] font-black text-blue-600 animate-pulse uppercase tracking-widest">
+                          Memproses {bulkProgress + 1} / {selectedIds.length}
+                        </span>
+                      )}
+                    </div>
+                    
+                    <div className="space-y-2 max-h-[300px] overflow-y-auto no-scrollbar pr-2">
+                       {assets.filter(a => selectedIds.includes(a.id)).map((asset, idx) => {
+                         const result = bulkResults[asset.id];
+                         const isCurrent = currentProcessingId === asset.id;
+                         
+                         return (
+                           <div key={asset.id} className={cn(
+                             "p-4 rounded-2xl flex items-center justify-between border transition-all duration-500",
+                             isCurrent ? "bg-blue-50 border-blue-200 shadow-md scale-[1.02]" : "bg-white border-slate-100 opacity-60"
+                           )}>
+                             <div className="flex items-center gap-4">
+                               <div className={cn(
+                                 "h-10 w-10 rounded-xl flex items-center justify-center text-xs font-black",
+                                 result?.status === "success" ? "bg-emerald-50 text-emerald-600" :
+                                 result?.status === "failed" ? "bg-rose-50 text-rose-600" :
+                                 result?.status === "pending" ? "bg-amber-50 text-amber-600" : "bg-slate-50 text-slate-400"
+                               )}>
+                                 {idx + 1}
+                               </div>
+                               <div className="flex flex-col">
+                                 <span className="text-sm font-black text-slate-800 uppercase tracking-tight">{asset.nama_stasiun}</span>
+                                 <span className="text-[9px] font-bold text-slate-400 uppercase tracking-widest">{type === "PLN" ? asset.meter_number : asset.phone_number}</span>
+                               </div>
+                             </div>
+                             
+                             <div className="flex items-center gap-3">
+                               <Badge className={cn(
+                                 "text-[8px] font-black tracking-widest uppercase py-1 px-3 rounded-lg border",
+                                 result?.status === "success" ? "bg-emerald-500 text-white border-transparent" :
+                                 result?.status === "failed" ? "bg-rose-500 text-white border-transparent" :
+                                 isCurrent ? "bg-blue-600 text-white animate-pulse" : "bg-slate-100 text-slate-400 border-slate-200"
+                               )}>
+                                 {result?.message || "Menunggu..."}
+                               </Badge>
+                             </div>
+                           </div>
+                         );
+                       })}
+                    </div>
+                  </div>
+
+                  {/* Actions */}
+                  <div className="pt-2 flex gap-4">
+                     {bulkStatus === "idle" || bulkStatus === "completed" ? (
+                       <Button 
+                         onClick={startBulkTransaction} 
+                         className="flex-1 h-16 rounded-2xl premium-gradient text-white font-black text-lg uppercase tracking-[0.2em] shadow-2xl shadow-blue-500/30"
+                       >
+                         {bulkStatus === "completed" ? "Ulangi Prosess" : "Eksekusi Antrian"}
+                       </Button>
+                     ) : (
+                       <div className="flex w-full gap-4">
+                         <Button 
+                           onClick={() => {
+                             setIsPaused(!isPaused);
+                           }} 
+                           className={cn(
+                             "flex-1 h-16 rounded-2xl font-black text-lg uppercase tracking-[0.2em] shadow-xl flex gap-3",
+                             isPaused ? "bg-emerald-600 hover:bg-emerald-700 shadow-emerald-200" : "bg-amber-500 hover:bg-amber-600 shadow-amber-200"
+                           )}
+                         >
+                           {isPaused ? <PlayCircle className="h-6 w-6" /> : <PauseCircle className="h-6 w-6" />}
+                           {isPaused ? "Lanjutkan" : "Jeda Antrian"}
+                         </Button>
+                         <Button 
+                           onClick={stopBulkTransaction} 
+                           variant="outline"
+                           className="h-16 px-8 rounded-2xl border-slate-200 text-slate-400 font-black uppercase text-xs tracking-widest hover:bg-rose-50 hover:text-rose-600 hover:border-rose-100"
+                         >
+                           Berhenti
+                         </Button>
+                       </div>
+                     )}
+                  </div>
+                </div>
+              </DialogContent>
+            </Dialog>
+          </div>
+        </div>
+      )}
+
     <div className="rounded-[2rem] border-none bg-white overflow-hidden shadow-2xl shadow-slate-200/50">
       <div className="overflow-x-auto no-scrollbar">
         <Table>
           <TableHeader className="bg-slate-50/80 border-b border-slate-100">
             <TableRow className="hover:bg-transparent">
-              <TableHead className="w-[80px] font-black uppercase tracking-widest text-[10px] text-slate-400 py-6 pl-10">ID</TableHead>
+              <TableHead className="w-[80px] py-6 pl-10">
+                <div className="flex items-center justify-center">
+                  <Checkbox 
+                    checked={selectedIds.length === assets.length && assets.length > 0}
+                    onCheckedChange={(checked) => handleSelectAll(!!checked)}
+                    className="h-5 w-5 rounded-lg border-slate-300 data-[state=checked]:bg-blue-600 data-[state=checked]:border-blue-600"
+                  />
+                </div>
+              </TableHead>
+              {/* <TableHead className="w-[80px] font-black uppercase tracking-widest text-[10px] text-slate-400 py-6 pl-10">ID</TableHead> */}
               <TableHead className="font-black uppercase tracking-widest text-[10px] text-slate-400">Nama Stasiun / Lokasi</TableHead>
               <TableHead className="font-black uppercase tracking-widest text-[10px] text-slate-400">{type === "PLN" ? "No. Meter / ID PLN" : "No. Orbit / Internet"}</TableHead>
               <TableHead className="font-black uppercase tracking-widest text-[10px] text-slate-400 text-center">Status Transaksi</TableHead>
@@ -296,8 +643,20 @@ export function AssetTable({ assets, type }: AssetTableProps) {
           <TableBody>
             {assets.length > 0 ? (
               assets.map((asset) => (
-                <TableRow key={asset.id} className="group hover:bg-blue-50/30 transition-all border-slate-50 last:border-0">
-                  <TableCell className="font-black text-slate-400 pl-10">#{asset.id}</TableCell>
+                <TableRow key={asset.id} className={cn(
+                  "group hover:bg-blue-50/30 transition-all border-slate-50 last:border-0",
+                  selectedIds.includes(asset.id) && "bg-blue-50/50"
+                )}>
+                  <TableCell className="pl-10">
+                    <div className="flex items-center justify-center">
+                      <Checkbox 
+                        checked={selectedIds.includes(asset.id)}
+                        onCheckedChange={() => handleToggleSelect(asset.id)}
+                        className="h-5 w-5 rounded-lg border-slate-300 data-[state=checked]:bg-blue-600 data-[state=checked]:border-blue-600"
+                      />
+                    </div>
+                  </TableCell>
+                  {/* <TableCell className="font-black text-slate-400 pl-10">#{asset.id}</TableCell> */}
                   <TableCell>
                     <div className="flex flex-col">
                       <span className="font-black text-slate-800 tracking-tight text-base group-hover:text-blue-600 transition-colors uppercase leading-none">{asset.nama_stasiun}</span>
@@ -359,7 +718,7 @@ export function AssetTable({ assets, type }: AssetTableProps) {
                             )}
                           >
                             {loading === asset.id ? <Loader2 className="h-4 w-4 animate-spin" /> : (type === "PLN" ? <Zap className="h-4 w-4" /> : <Wifi className="h-4 w-4" />)}
-                            {type === "PLN" ? "Topup Token" : "Topup Orbit"}
+                            {type === "PLN" ? "Topup Token" : (asset.default_sku?.includes("xl") ? "Topup XL" : "Topup Orbit")}
                           </Button>
                         </DialogTrigger>
                       <DialogContent className="sm:max-w-[480px] rounded-[2.5rem] p-0 overflow-hidden border-none shadow-2xl">
@@ -380,7 +739,7 @@ export function AssetTable({ assets, type }: AssetTableProps) {
                         
                         <div className="p-8 -mt-8 bg-white rounded-t-[2.5rem] space-y-4">
                           <div className="grid gap-4">
-                            {products.map((p) => (
+                            {getProductsForAsset(asset).map((p) => (
                               <Button
                                 key={p.sku}
                                 variant="outline"
@@ -419,7 +778,7 @@ export function AssetTable({ assets, type }: AssetTableProps) {
               ))
             ) : (
               <TableRow>
-                <TableCell colSpan={5} className="h-48 text-center">
+                <TableCell colSpan={6} className="h-48 text-center">
                   <div className="flex flex-col items-center justify-center gap-3 text-slate-300">
                     {/* <Database className="h-12 w-12 opacity-20" /> */}
                     <p className="text-sm font-bold uppercase tracking-widest text-slate-400">Belum ada stasiun terdaftar</p>
@@ -430,6 +789,7 @@ export function AssetTable({ assets, type }: AssetTableProps) {
           </TableBody>
         </Table>
       </div>
+    </div>
 
       {/* RESULT MODAL (STRUK TOKEN UI) */}
       <Dialog 
@@ -437,7 +797,7 @@ export function AssetTable({ assets, type }: AssetTableProps) {
         onOpenChange={(open) => {
           setResultModal(prev => ({ ...prev, open }));
           if (!open) {
-            window.location.reload();
+            // router.refresh(); // REMOVED
           }
         }}
       >

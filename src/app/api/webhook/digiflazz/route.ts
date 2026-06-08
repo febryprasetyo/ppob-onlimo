@@ -6,19 +6,29 @@ import { generateTRXMessage } from "@/lib/trx-helper";
 export async function POST(req: Request) {
   try {
     const forwarded = req.headers.get("x-forwarded-for");
-    const clientIp = forwarded ? forwarded.split(/, /)[0] : "unknown";
-    const allowedIp = process.env.WHITELIST_IP || "52.74.250.133";
+    let clientIp = forwarded ? forwarded.split(/, /)[0] : "unknown";
 
-    if (clientIp !== allowedIp && process.env.NODE_ENV === "production") {
-      console.warn(`Unauthorized access attempt from IP: ${clientIp}`);
+    // Handle IPv6-mapped IPv4 (::ffff:1.2.3.4)
+    if (clientIp.startsWith("::ffff:")) {
+      clientIp = clientIp.replace("::ffff:", "");
+    }
+    
+    // Allow multiple IPs (comma separated) or default
+    const allowedIps = (process.env.WHITELIST_IP || "52.74.250.133").split(",").map(ip => ip.trim());
+
+    if (!allowedIps.includes(clientIp) && process.env.NODE_ENV === "production") {
+      console.warn(`[Webhook] Unauthorized access attempt from IP: ${clientIp}`);
       return NextResponse.json({ error: "Forbidden" }, { status: 403 });
     }
 
     const data = await req.json();
+    console.log("[Webhook] Received Digiflazz Payload:", JSON.stringify(data, null, 2));
+
     const payload = data.data || {};
-    const { ref_id, status, sn, price, message } = payload;
+    const { ref_id, status, sn, price, message, rc } = payload;
     
     const normalizedRefId = ref_id?.toUpperCase() || "";
+    const statusLower = status?.toLowerCase() || "";
 
     if (normalizedRefId.startsWith("PLN")) {
       // Logic for PLN
@@ -28,8 +38,12 @@ export async function POST(req: Request) {
       const asset = await db("assets_pln").where("id", trx.asset_id).first();
 
       let finalStatus = "PENDING";
-      if (status === "Success") finalStatus = "SUCCESS";
-      if (status === "Fail") finalStatus = "FAILED";
+      // Check for RC=00 OR status text variations
+      if (rc === '00' || statusLower === "success" || statusLower === "sukses" || statusLower === "berhasil") {
+        finalStatus = "SUCCESS";
+      } else if (rc === '01' || rc === '02' || statusLower === "fail" || statusLower === "gagal") {
+        finalStatus = "FAILED";
+      }
 
       const updateData: any = {
         status: finalStatus,
@@ -64,8 +78,12 @@ export async function POST(req: Request) {
       const asset = await db("assets_orbit").where("id", trx.asset_id).first();
 
       let finalStatus = "PENDING";
-      if (status === "Success") finalStatus = "SUCCESS";
-      if (status === "Fail") finalStatus = "FAILED";
+      // Check for RC=00 OR status text variations
+      if (rc === '00' || statusLower === "success" || statusLower === "sukses" || statusLower === "berhasil") {
+        finalStatus = "SUCCESS";
+      } else if (rc === '01' || rc === '02' || statusLower === "fail" || statusLower === "gagal") {
+        finalStatus = "FAILED";
+      }
 
       const updateData: any = {
         status: finalStatus,
@@ -91,11 +109,31 @@ export async function POST(req: Request) {
         last_trx_status: finalStatus,
         last_trx_at: db.fn.now()
       });
+    } else if (normalizedRefId.startsWith("EMN")) {
+      // Logic for E-Money
+      const trx = await db("trx_emoney").where("ref_id", ref_id).first();
+      if (!trx) return NextResponse.json({ message: "TRX not found" });
+
+      let finalStatus = "PENDING";
+      if (rc === '00' || statusLower === "success" || statusLower === "sukses" || statusLower === "berhasil") {
+        finalStatus = "SUCCESS";
+      } else if (rc === '01' || rc === '02' || statusLower === "fail" || statusLower === "gagal") {
+        finalStatus = "FAILED";
+      }
+
+      await db("trx_emoney").where("ref_id", ref_id).update({
+        status: finalStatus,
+        sn: sn,
+        price: price,
+        message: message,
+        raw_response: JSON.stringify(data),
+        updated_at: db.fn.now(),
+      });
     }
 
     return NextResponse.json({ message: "Webhook processed" });
   } catch (error: any) {
-    console.error("Webhook Error:", error);
+    console.error("[Webhook] Error processing request:", error);
     return NextResponse.json({ error: error.message }, { status: 500 });
   }
 }

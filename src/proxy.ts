@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { getSession } from "@/lib/auth";
 
-export async function middleware(request: NextRequest) {
+export async function proxy(request: NextRequest) {
   const session = await getSession();
 
   if (!session && !request.nextUrl.pathname.startsWith("/login") && request.nextUrl.pathname !== "/") {
@@ -15,6 +15,8 @@ export async function middleware(request: NextRequest) {
   return NextResponse.next();
 }
 
+export default proxy;
+
 export const config = {
-  matcher: ["/((?!api|_next/static|_next/image|favicon.ico).*)"],
+  matcher: ["/((?!api|_next/static|_next/image|_next/webpack-hmr|favicon.ico).*)"],
 };

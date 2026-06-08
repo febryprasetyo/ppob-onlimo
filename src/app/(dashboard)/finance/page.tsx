@@ -1,6 +1,7 @@
 "use client";
 
 import { useState, useEffect } from "react";
+import { useRouter, useSearchParams, usePathname } from "next/navigation";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { Button } from "@/components/ui/button";
@@ -24,6 +25,12 @@ import { cn } from "@/lib/utils";
 import { NewInvoiceDialog } from "@/components/finance/new-invoice-dialog";
 
 export default function FinancePage() {
+  const router = useRouter();
+  const searchParams = useSearchParams();
+  const pathname = usePathname();
+  
+  const currentTab = searchParams.get("tab") || "deposit";
+
   const [invoices, setInvoices] = useState<any[]>([]);
   const [report, setReport] = useState<any>(null);
   const [newInvOpen, setNewInvOpen] = useState(false);
@@ -31,6 +38,13 @@ export default function FinancePage() {
     month: String(new Date().getMonth() + 1),
     year: String(new Date().getFullYear()),
   });
+
+  const onTabChange = (value: string) => {
+    const params = new URLSearchParams(searchParams.toString());
+    params.set("tab", value);
+    router.replace(`${pathname}?${params.toString()}`, { scroll: false });
+  };
+
 
   const fetchInvoices = async () => {
     try {
@@ -93,7 +107,7 @@ export default function FinancePage() {
         </Button>
       </div>
 
-      <Tabs defaultValue="deposit" className="w-full space-y-8">
+      <Tabs defaultValue={currentTab} onValueChange={onTabChange} className="w-full space-y-8">
         <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 bg-white/50 backdrop-blur-md p-2 rounded-[2rem] border border-white shadow-xl shadow-slate-200/50">
           <TabsList className="bg-slate-100/80 h-14 p-1.5 gap-2 rounded-[1.6rem] w-full sm:w-fit">
             <TabsTrigger 

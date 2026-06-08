@@ -23,8 +23,19 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogHeader,
+  DialogTitle,
+  DialogFooter,
+} from "@/components/ui/dialog";
+import { HistorySummaryCards } from "./history-summary-cards";
+
 interface TrxData {
   ref_id: string;
+  asset_id?: number; // Added asset_id
   nama_stasiun: string;
   meter_number?: string;
   phone_number?: string;
@@ -46,9 +57,26 @@ interface HistoryTableProps {
 
 export function HistoryTable({ data, type }: HistoryTableProps) {
   const [selectedTrx, setSelectedTrx] = useState<TrxData | null>(null);
+  const [retryTrx, setRetryTrx] = useState<TrxData | null>(null); // State for retry confirmation
   const [loadingId, setLoadingId] = useState<string | null>(null);
   const [search, setSearch] = useState("");
   const [waFilter, setWaFilter] = useState("all");
+  const [monthFilter, setMonthFilter] = useState("all");
+
+  const availableMonths = Array.from(
+    new Set(
+      data.map((trx) => {
+        const date = new Date(trx.created_at);
+        return `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, "0")}`;
+      })
+    )
+  ).sort().reverse();
+
+  const formatMonthLabel = (monthYear: string) => {
+    const [year, month] = monthYear.split("-");
+    const date = new Date(parseInt(year), parseInt(month) - 1);
+    return date.toLocaleString("id-ID", { month: "long", year: "numeric" });
+  };
 
   const copyToClipboard = (text: string) => {
     navigator.clipboard.writeText(text);
@@ -75,6 +103,48 @@ export function HistoryTable({ data, type }: HistoryTableProps) {
     }
   };
 
+  // Open the confirmation modal
+  const handleRetry = (trx: TrxData) => {
+    setRetryTrx(trx);
+  };
+
+  // Actual execution after confirmation
+  const confirmRetry = async () => {
+    if (!retryTrx) return;
+    
+    setLoadingId(retryTrx.ref_id);
+    setRetryTrx(null); // Close modal immediately or keep open? Better close and show loading on button or global.
+    // Let's close modal and show loading state on the button of the row if desired, 
+    // but the row button might be confusing. 
+    // Let's keep loadingId logic which disables the row button.
+    
+    try {
+      // Use existing create trx endpoint
+      const endpoint = type === "PLN" ? "/api/trx/pln" : "/api/trx/orbit";
+      const res = await fetch(endpoint, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ 
+            asset_id: retryTrx.asset_id,
+            sku: retryTrx.sku 
+        }),
+      });
+      
+      const result = await res.json();
+      if (result.success) {
+        alert("Pembelian ulang berhasil diproses!");
+        window.location.reload();
+      } else {
+        alert(result.error || "Gagal melakukan pembelian ulang");
+      }
+    } catch (error) {
+      console.error(error);
+      alert("Terjadi kesalahan saat memproses permintaan.");
+    } finally {
+      setLoadingId(null);
+    }
+  };
+
   const filteredData = data.filter((trx) => {
     const matchesSearch = trx.nama_stasiun.toLowerCase().includes(search.toLowerCase()) || 
                           (trx.phone_number && trx.phone_number.includes(search)) ||
@@ -89,11 +159,26 @@ export function HistoryTable({ data, type }: HistoryTableProps) {
       matchesFilter = trx.status === "FAILED";
     }
 
-    return matchesSearch && matchesFilter;
+    let matchesMonth = true;
+    if (monthFilter !== "all") {
+      const trxDate = new Date(trx.created_at);
+      const trxMonthYear = `${trxDate.getFullYear()}-${String(trxDate.getMonth() + 1).padStart(2, "0")}`;
+      matchesMonth = trxMonthYear === monthFilter;
+    }
+
+    return matchesSearch && matchesFilter && matchesMonth;
   });
+
+  const stats = {
+    total: filteredData.length,
+    success: filteredData.filter(h => h.status === "SUCCESS").length,
+    pending: filteredData.filter(h => h.status === "PENDING").length,
+    failed: filteredData.filter(h => h.status === "FAILED").length,
+  };
 
   return (
     <div className="space-y-6">
+      <HistorySummaryCards stats={stats} />
       {/* Search and Filter UI */}
       <div className="flex flex-col md:flex-row gap-4 mb-4">
         <div className="relative flex-1 group">
@@ -106,14 +191,32 @@ export function HistoryTable({ data, type }: HistoryTableProps) {
           <Search className="absolute left-5 top-1/2 -translate-y-1/2 h-5 w-5 text-slate-300 group-focus-within:text-blue-500 transition-colors" />
         </div>
         <div className="w-full md:w-[240px]">
+          <Select value={monthFilter} onValueChange={setMonthFilter}>
+            <SelectTrigger className="h-14 rounded-2xl bg-white border-slate-100 shadow-sm px-6 font-bold text-slate-600 focus:ring-4 focus:ring-blue-500/5">
+              <div className="flex items-center gap-3">
+                <Filter className="h-4 w-4 text-slate-400" />
+                <SelectValue placeholder="Pilih Bulan" />
+              </div>
+            </SelectTrigger>
+            <SelectContent className="rounded-2xl border-none shadow-2xl p-2 bg-white">
+              <SelectItem value="all" className="rounded-xl font-bold text-slate-600 focus:bg-blue-50 focus:text-blue-600 py-3">Semua Bulan</SelectItem>
+              {availableMonths.map((m) => (
+                <SelectItem key={m} value={m} className="rounded-xl font-bold text-slate-600 focus:bg-blue-50 focus:text-blue-600 py-3">
+                  {formatMonthLabel(m)}
+                </SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+        </div>
+        <div className="w-full md:w-[240px]">
           <Select value={waFilter} onValueChange={setWaFilter}>
-            <SelectTrigger className="h-14 rounded-2xl bg-white/50 backdrop-blur-md border-slate-100 shadow-sm px-6 font-bold text-slate-600 focus:ring-4 focus:ring-blue-500/5">
+            <SelectTrigger className="h-14 rounded-2xl bg-white border-slate-100 shadow-sm px-6 font-bold text-slate-600 focus:ring-4 focus:ring-blue-500/5">
               <div className="flex items-center gap-3">
                 <Filter className="h-4 w-4 text-slate-400" />
                 <SelectValue placeholder="Status WA" />
               </div>
             </SelectTrigger>
-            <SelectContent className="rounded-2xl border-none shadow-2xl p-2">
+            <SelectContent className="rounded-2xl border-none shadow-2xl p-2 bg-white">
               <SelectItem value="all" className="rounded-xl font-bold text-slate-600 focus:bg-blue-50 focus:text-blue-600 py-3">Semua Status</SelectItem>
               <SelectItem value="sent" className="rounded-xl font-bold text-slate-600 focus:bg-blue-50 focus:text-blue-600 py-3">Terkirim</SelectItem>
               <SelectItem value="not_sent" className="rounded-xl font-bold text-slate-600 focus:bg-blue-50 focus:text-blue-600 py-3">Belum Terkirim</SelectItem>
@@ -232,6 +335,23 @@ export function HistoryTable({ data, type }: HistoryTableProps) {
                         >
                           <Eye className="h-5 w-5" />
                         </Button>
+                        
+                        {/* RETRY BUTTON FOR FAILED TRX */}
+                        {trx.status === "FAILED" && (
+                             <Button
+                              size="sm"
+                              disabled={loadingId === trx.ref_id}
+                              className="h-11 px-5 rounded-2xl font-black uppercase text-[10px] tracking-widest transition-all bg-rose-50 text-rose-600 hover:bg-rose-100 border border-rose-100"
+                              onClick={() => handleRetry(trx)}
+                            >
+                              {loadingId === trx.ref_id ? (
+                                <RefreshCw className="h-4 w-4 animate-spin" />
+                              ) : (
+                                "Beli Ulang"
+                              )}
+                            </Button>
+                        )}
+                        
                         {trx.status === "SUCCESS" && (
                           <Button
                             size="sm"
@@ -264,6 +384,44 @@ export function HistoryTable({ data, type }: HistoryTableProps) {
           </Table>
         </div>
       </div>
+
+      <Dialog open={!!retryTrx} onOpenChange={(open) => !open && setRetryTrx(null)}>
+        <DialogContent className="sm:max-w-md rounded-3xl p-0 overflow-hidden border-none shadow-2xl">
+          <DialogHeader className="p-8 pb-4">
+            <DialogTitle className="text-xl font-black text-slate-800 tracking-tight">Konfirmasi Pembelian Ulang</DialogTitle>
+            <DialogDescription className="text-slate-500 font-medium">
+              Apakah Anda yakin ingin melakukan pembelian ulang untuk transaksi ini?
+              <div className="mt-4 p-4 bg-slate-50 rounded-2xl border border-slate-100">
+                <div className="grid grid-cols-2 gap-2 text-xs">
+                  <span className="font-bold text-slate-400 uppercase tracking-widest">Stasiun</span>
+                  <span className="font-black text-slate-700 text-right">{retryTrx?.nama_stasiun}</span>
+                  
+                  <span className="font-bold text-slate-400 uppercase tracking-widest">SKU</span>
+                  <span className="font-black text-slate-700 text-right">{retryTrx?.sku}</span>
+                  
+                  <span className="font-bold text-slate-400 uppercase tracking-widest">Identity</span>
+                  <span className="font-black text-slate-700 text-right">{type === "PLN" ? retryTrx?.meter_number : retryTrx?.phone_number}</span>
+                </div>
+              </div>
+            </DialogDescription>
+          </DialogHeader>
+          <DialogFooter className="p-6 bg-slate-50/50 border-t border-slate-100 gap-3">
+            <Button
+              variant="outline"
+              onClick={() => setRetryTrx(null)}
+              className="rounded-xl border-slate-200 font-bold text-slate-500 hover:bg-slate-100 h-10 px-6"
+            >
+              Batal
+            </Button>
+            <Button
+              onClick={confirmRetry}
+              className="rounded-xl premium-gradient text-white font-bold h-10 px-6 shadow-lg shadow-blue-500/20 border-none"
+            >
+              Ya, Proses Sekarang
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
 
       {selectedTrx && (
         <ReceiptModal

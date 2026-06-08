@@ -2,7 +2,7 @@
 
 import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
-import { LayoutDashboard, History, Users, LogOut, Zap, Tag, CreditCard, X } from "lucide-react";
+import { LayoutDashboard, History, Users, LogOut, Zap, Tag, CreditCard, X, Wallet, Receipt } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
 
@@ -19,7 +19,7 @@ export function NavSidebar({ username, role, onClose }: NavSidebarProps) {
   const handleLogout = async () => {
     await fetch("/api/auth/logout", { method: "POST" });
     router.push("/login");
-    router.refresh();
+    // router.refresh(); REMOVED
   };
 
   const menuItems = [
@@ -28,6 +28,8 @@ export function NavSidebar({ username, role, onClose }: NavSidebarProps) {
     { name: "Validasi ID PLN", href: "/check-pln", icon: Zap },
     { name: "Daftar Harga", href: "/price-list", icon: Tag },
     { name: "Keuangan", href: "/finance", icon: CreditCard },
+    { name: "E-Money", href: "/emoney", icon: Wallet },
+    { name: "Struk Transaksi", href: "/struk", icon: Receipt },
     { name: "History", href: "/history", icon: History },
   ];
 

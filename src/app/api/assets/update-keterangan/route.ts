@@ -9,31 +9,19 @@ export async function POST(req: Request) {
   }
 
   try {
-    const { 
-      nama_stasiun, 
-      phone_number, 
-      operator_wa,
-      provinsi,
-      kabupaten,
-      detail_lokasi,
-      keterangan
-    } = await req.json();
+    const { asset_id, type, keterangan } = await req.json();
 
-    if (!nama_stasiun || !phone_number || !operator_wa) {
+    if (!asset_id || !type) {
       return NextResponse.json({ error: "Data tidak lengkap" }, { status: 400 });
     }
 
-    const [id] = await db("assets_orbit").insert({
-      nama_stasiun,
-      phone_number,
-      operator_wa,
-      provinsi,
-      kabupaten,
-      detail_lokasi,
-      keterangan
-    }).returning("id");
+    const tableName = type === "pln" ? "assets_pln" : "assets_orbit";
 
-    return NextResponse.json({ success: true, id });
+    await db(tableName)
+      .where("id", asset_id)
+      .update({ keterangan: keterangan || "" });
+
+    return NextResponse.json({ success: true });
   } catch (error: any) {
     return NextResponse.json({ error: error.message }, { status: 500 });
   }

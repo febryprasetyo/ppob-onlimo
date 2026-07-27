@@ -14,7 +14,11 @@ export async function POST(req: Request) {
       meter_number, 
       operator_wa, 
       customer_name, 
-      segment_power 
+      segment_power,
+      provinsi,
+      kabupaten,
+      detail_lokasi,
+      keterangan
     } = await req.json();
 
     if (!nama_stasiun || !meter_number || !operator_wa) {
@@ -26,7 +30,11 @@ export async function POST(req: Request) {
       meter_number,
       operator_wa,
       customer_name,
-      segment_power
+      segment_power,
+      provinsi,
+      kabupaten,
+      detail_lokasi,
+      keterangan
     }).returning("id");
 
     return NextResponse.json({ success: true, id });

@@ -24,7 +24,11 @@ export async function GET(req: Request) {
         pln_sku: p.default_sku,
         phone_number: "",
         operator_wa: p.operator_wa,
-        pln_id: p.id
+        pln_id: p.id,
+        provinsi: p.provinsi || "",
+        kabupaten: p.kabupaten || "",
+        detail_lokasi: p.detail_lokasi || "",
+        keterangan: p.keterangan || ""
       };
     });
 
@@ -34,6 +38,10 @@ export async function GET(req: Request) {
         stationsMap[o.nama_stasiun].orbit_sku = o.default_sku;
         stationsMap[o.nama_stasiun].orbit_id = o.id;
         if (o.operator_wa) stationsMap[o.nama_stasiun].operator_wa = o.operator_wa;
+        if (o.provinsi) stationsMap[o.nama_stasiun].provinsi = o.provinsi;
+        if (o.kabupaten) stationsMap[o.nama_stasiun].kabupaten = o.kabupaten;
+        if (o.detail_lokasi) stationsMap[o.nama_stasiun].detail_lokasi = o.detail_lokasi;
+        if (o.keterangan) stationsMap[o.nama_stasiun].keterangan = o.keterangan;
       } else {
         stationsMap[o.nama_stasiun] = {
           nama_stasiun: o.nama_stasiun,
@@ -43,7 +51,11 @@ export async function GET(req: Request) {
           phone_number: o.phone_number,
           orbit_sku: o.default_sku,
           operator_wa: o.operator_wa,
-          orbit_id: o.id
+          orbit_id: o.id,
+          provinsi: o.provinsi || "",
+          kabupaten: o.kabupaten || "",
+          detail_lokasi: o.detail_lokasi || "",
+          keterangan: o.keterangan || ""
         };
       }
     });

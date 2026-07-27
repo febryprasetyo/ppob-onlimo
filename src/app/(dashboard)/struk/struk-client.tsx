@@ -1,7 +1,7 @@
 "use client";
 
-import { useRef, useState } from "react";
-import { Receipt, Download, Loader2, Search, Filter, Zap, Wifi } from "lucide-react";
+import { useRef, useState, useEffect } from "react";
+import { Receipt, Download, Loader2, Search, Filter, Zap, Wifi, Printer, Edit3 } from "lucide-react";
 import { toPng } from "html-to-image";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -22,6 +22,28 @@ import {
 } from "@/components/ui/table";
 import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { cn } from "@/lib/utils";
+import { ReportSummaryTable } from "./components/ReportSummaryTable";
+import { ReceiptGrid } from "./components/ReceiptGrid";
+import { handlePrintWithTitle } from "./utils/print-helper";
+
+import {
+  Dialog,
+  DialogContent,
+  DialogHeader,
+  DialogTitle,
+  DialogFooter,
+} from "@/components/ui/dialog";
+
+interface AssetData {
+  id: number;
+  nama_stasiun: string;
+  meter_number?: string;
+  phone_number?: string;
+  provinsi?: string;
+  kabupaten?: string;
+  detail_lokasi?: string;
+  keterangan?: string;
+}
 
 interface TrxData {
   ref_id: string;
@@ -36,26 +58,70 @@ interface TrxData {
   created_at: string;
   message?: string;
   raw_response?: any;
+  provinsi?: string;
+  kabupaten?: string;
+  detail_lokasi?: string;
+  keterangan?: string;
+  asset_id: number;
 }
 
 interface StrukClientProps {
   dataPln: TrxData[];
   dataOrbit: TrxData[];
+  assetsPln: AssetData[];
+  assetsOrbit: AssetData[];
 }
 
-export function StrukClient({ dataPln, dataOrbit }: StrukClientProps) {
+export function StrukClient({ dataPln, dataOrbit, assetsPln, assetsOrbit }: StrukClientProps) {
   const [activeTab, setActiveTab] = useState<"pln" | "orbit">("pln");
-  const data = activeTab === "pln" ? dataPln : dataOrbit;
+  const [localDataPln, setLocalDataPln] = useState<TrxData[]>(dataPln);
+  const [localDataOrbit, setLocalDataOrbit] = useState<TrxData[]>(dataOrbit);
+  const [localAssetsPln, setLocalAssetsPln] = useState<AssetData[]>(assetsPln || []);
+  const [localAssetsOrbit, setLocalAssetsOrbit] = useState<AssetData[]>(assetsOrbit || []);
+
+  useEffect(() => {
+    setLocalDataPln(dataPln);
+  }, [dataPln]);
+
+  useEffect(() => {
+    setLocalDataOrbit(dataOrbit);
+  }, [dataOrbit]);
+
+  useEffect(() => {
+    setLocalAssetsPln(assetsPln || []);
+  }, [assetsPln]);
+
+  useEffect(() => {
+    setLocalAssetsOrbit(assetsOrbit || []);
+  }, [assetsOrbit]);
+
+  const data = activeTab === "pln" ? localDataPln : localDataOrbit;
+  const activeAssets = activeTab === "pln" ? localAssetsPln : localAssetsOrbit;
 
   const receiptRef = useRef<HTMLDivElement>(null);
   const [downloading, setDownloading] = useState(false);
   const [selectedTrx, setSelectedTrx] = useState<TrxData | null>(null);
   const [search, setSearch] = useState("");
   const [monthFilter, setMonthFilter] = useState("all");
+  const [keteranganInput, setKeteranganInput] = useState("");
+  const [updatingKeterangan, setUpdatingKeterangan] = useState(false);
+  const [printMode, setPrintMode] = useState<"all" | "table" | "receipts">("all");
+  const [isReviewOpen, setIsReviewOpen] = useState(false);
+  const [reviewNotes, setReviewNotes] = useState<{ [key: number]: string }>({});
+  const [pendingPrintType, setPendingPrintType] = useState<"table" | "receipts" | null>(null);
+  const [savingNotes, setSavingNotes] = useState(false);
+
+  useEffect(() => {
+    if (selectedTrx) {
+      setKeteranganInput(selectedTrx.keterangan || "");
+    } else {
+      setKeteranganInput("");
+    }
+  }, [selectedTrx]);
 
   const availableMonths = Array.from(
     new Set(
-      data.map((trx) => {
+      (activeTab === "pln" ? dataPln : dataOrbit).map((trx) => {
         const date = new Date(trx.created_at);
         return `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, "0")}`;
       })
@@ -68,21 +134,71 @@ export function StrukClient({ dataPln, dataOrbit }: StrukClientProps) {
     return date.toLocaleString("id-ID", { month: "long", year: "numeric" });
   };
 
-  const filteredData = data.filter((trx) => {
-    const idNum = trx.meter_number || trx.phone_number || "";
-    const matchesSearch =
-      trx.nama_stasiun.toLowerCase().includes(search.toLowerCase()) ||
-      idNum.includes(search);
-
-    let matchesMonth = true;
-    if (monthFilter !== "all") {
-      const trxDate = new Date(trx.created_at);
-      const trxMonthYear = `${trxDate.getFullYear()}-${String(trxDate.getMonth() + 1).padStart(2, "0")}`;
-      matchesMonth = trxMonthYear === monthFilter;
+  const baseTrxs = (() => {
+    if (monthFilter === "all") {
+      return data.map((trx) => {
+        const asset = activeAssets.find((a) => a.id === trx.asset_id);
+        return {
+          ...trx,
+          provinsi: asset?.provinsi || trx.provinsi,
+          kabupaten: asset?.kabupaten || trx.kabupaten,
+          detail_lokasi: asset?.detail_lokasi || trx.detail_lokasi,
+          keterangan: asset?.keterangan !== undefined ? asset.keterangan : trx.keterangan,
+        };
+      });
     }
 
-    return matchesSearch && matchesMonth;
-  });
+    const monthTrxs = data.filter((trx) => {
+      const trxDate = new Date(trx.created_at);
+      const trxMonthYear = `${trxDate.getFullYear()}-${String(trxDate.getMonth() + 1).padStart(2, "0")}`;
+      return trxMonthYear === monthFilter;
+    });
+
+    const result: TrxData[] = [];
+    activeAssets.forEach((asset) => {
+      const trxForAsset = monthTrxs.filter((t) => t.asset_id === asset.id);
+      if (trxForAsset.length > 0) {
+        trxForAsset.forEach((t) => {
+          result.push({
+            ...t,
+            provinsi: asset.provinsi || t.provinsi,
+            kabupaten: asset.kabupaten || t.kabupaten,
+            detail_lokasi: asset.detail_lokasi || t.detail_lokasi,
+            keterangan: asset.keterangan !== undefined ? asset.keterangan : t.keterangan,
+          });
+        });
+      } else {
+        result.push({
+          ref_id: `placeholder-${activeTab}-${asset.id}-${monthFilter}`,
+          nama_stasiun: asset.nama_stasiun,
+          meter_number: asset.meter_number || "",
+          phone_number: asset.phone_number || "",
+          sku: "",
+          price: 0,
+          status: "SUCCESS",
+          token_sn: "-",
+          created_at: `${monthFilter}-01T00:00:00.000Z`,
+          provinsi: asset.provinsi || "",
+          kabupaten: asset.kabupaten || "",
+          detail_lokasi: asset.detail_lokasi || "",
+          keterangan: asset.keterangan || "",
+          asset_id: asset.id,
+        });
+      }
+    });
+
+    return result;
+  })();
+
+  const filteredData = baseTrxs
+    .filter((trx) => {
+      const idNum = trx.meter_number || trx.phone_number || "";
+      const matchesSearch =
+        trx.nama_stasiun.toLowerCase().includes(search.toLowerCase()) ||
+        idNum.includes(search);
+      return matchesSearch;
+    })
+    .sort((a, b) => a.nama_stasiun.localeCompare(b.nama_stasiun));
 
   const handleDownload = async () => {
     if (receiptRef.current === null) return;
@@ -110,6 +226,46 @@ export function StrukClient({ dataPln, dataOrbit }: StrukClientProps) {
       console.error("Download failed", err);
     } finally {
       setDownloading(false);
+    }
+  };
+
+  const handleUpdateKeterangan = async () => {
+    if (!selectedTrx) return;
+    setUpdatingKeterangan(true);
+    try {
+      const res = await fetch("/api/assets/update-keterangan", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          asset_id: selectedTrx.asset_id,
+          type: activeTab,
+          keterangan: keteranganInput
+        })
+      });
+      const json = await res.json();
+      if (!json.success) {
+        alert("Gagal memperbarui keterangan: " + (json.error || "Unknown error"));
+        return;
+      }
+
+      // Update local state to reflect the change immediately
+      if (activeTab === "pln") {
+        setLocalDataPln(prev => prev.map(t => 
+          t.asset_id === selectedTrx.asset_id ? { ...t, keterangan: keteranganInput } : t
+        ));
+      } else {
+        setLocalDataOrbit(prev => prev.map(t => 
+          t.asset_id === selectedTrx.asset_id ? { ...t, keterangan: keteranganInput } : t
+        ));
+      }
+
+      // Update selectedTrx too so the display updates
+      setSelectedTrx(prev => prev ? { ...prev, keterangan: keteranganInput } : null);
+      alert("Keterangan berhasil disimpan!");
+    } catch (err: any) {
+      alert("Terjadi kesalahan: " + err.message);
+    } finally {
+      setUpdatingKeterangan(false);
     }
   };
 
@@ -186,6 +342,146 @@ export function StrukClient({ dataPln, dataOrbit }: StrukClientProps) {
   if (selectedTrx?.sku === "ORBIT50") voucherName = "Telkomsel Data Orbit 50 GB 30 Hari";
   if (selectedTrx?.sku === "ORBIT100") voucherName = "Telkomsel Data Orbit 100 GB 30 Hari";
 
+  // Helper to compute receipt details for a given transaction (reusable for grid)
+  const computeReceiptDetails = (trx: TrxData) => {
+    let _tokenCode = "-";
+    let _customerName = "-";
+    let _segmentPower = "-";
+    let _kwh = "-";
+    let _rpToken = 0;
+    let _adminFee = 0;
+    let _totalBayar = 0;
+    let _idLabel = "IDPEL";
+    let _idValue = "-";
+
+    if (activeTab === "pln") {
+      if (trx.token_sn && trx.token_sn.includes("/")) {
+        const parts = trx.token_sn.split("/");
+        _tokenCode = parts[0]?.trim() || "-";
+        _customerName = parts[1]?.trim() || "-";
+        let sp = parts[2]?.trim();
+        if (sp && sp.includes("/")) sp = sp.replace(/\//g, " / ");
+        _segmentPower = sp || "-";
+        _kwh = parts[3]?.trim() || "-";
+        if (_kwh !== "-" && !isNaN(Number(_kwh))) _kwh = Number(_kwh).toString();
+      } else if (trx.token_sn) {
+        _tokenCode = trx.token_sn.trim();
+      }
+      if (trx.sku) {
+        const numMatch = trx.sku.match(/\d+/);
+        if (numMatch) _rpToken = parseInt(numMatch[0]) * 1000;
+        else _rpToken = trx.price || 0;
+      }
+      _adminFee = 3500;
+      _totalBayar = _rpToken + _adminFee;
+      _idLabel = "IDPEL";
+      _idValue = trx.meter_number || "-";
+    } else {
+      _adminFee = 1000;
+      _rpToken = trx.price || 0;
+      _totalBayar = 101000;
+      _idLabel = "NO CUSTOMER";
+      _idValue = trx.phone_number || "-";
+    }
+    return { tokenCode: _tokenCode, customerName: _customerName, segmentPower: _segmentPower, kwh: _kwh, rpToken: _rpToken, adminFee: _adminFee, totalBayar: _totalBayar, idLabel: _idLabel, idValue: _idValue };
+  };
+
+  const handleOpenReview = (type: "table" | "receipts") => {
+    const initialNotes: { [key: number]: string } = {};
+    filteredData.forEach((trx) => {
+      initialNotes[trx.asset_id] = trx.keterangan || "";
+    });
+    setReviewNotes(initialNotes);
+    setPendingPrintType(type);
+    setIsReviewOpen(true);
+  };
+
+  const handleSaveAndPrint = async () => {
+    setSavingNotes(true);
+    try {
+      const uniqueAssetIds = Array.from(new Set(filteredData.map((t) => t.asset_id)));
+      
+      for (const assetId of uniqueAssetIds) {
+        const newNote = reviewNotes[assetId] ?? "";
+        const currentTrx = filteredData.find((t) => t.asset_id === assetId);
+        if (currentTrx && currentTrx.keterangan !== newNote) {
+          const res = await fetch("/api/assets/update-keterangan", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({
+              asset_id: assetId,
+              type: activeTab,
+              keterangan: newNote,
+            }),
+          });
+          const json = await res.json();
+          if (!json.success) {
+            console.error("Gagal update keterangan untuk asset_id:", assetId, json.error);
+          }
+        }
+      }
+
+      if (activeTab === "pln") {
+        setLocalAssetsPln((prev) =>
+          prev.map((a) => {
+            const updatedNote = reviewNotes[a.id];
+            return updatedNote !== undefined ? { ...a, keterangan: updatedNote } : a;
+          })
+        );
+        setLocalDataPln((prev) =>
+          prev.map((t) => {
+            const updatedNote = reviewNotes[t.asset_id];
+            return updatedNote !== undefined ? { ...t, keterangan: updatedNote } : t;
+          })
+        );
+      } else {
+        setLocalAssetsOrbit((prev) =>
+          prev.map((a) => {
+            const updatedNote = reviewNotes[a.id];
+            return updatedNote !== undefined ? { ...a, keterangan: updatedNote } : a;
+          })
+        );
+        setLocalDataOrbit((prev) =>
+          prev.map((t) => {
+            const updatedNote = reviewNotes[t.asset_id];
+            return updatedNote !== undefined ? { ...t, keterangan: updatedNote } : t;
+          })
+        );
+      }
+
+      setIsReviewOpen(false);
+
+      const category = activeTab === "pln" ? "PLN" : "Orbit";
+      if (pendingPrintType === "table") {
+        handlePrintWithTitle(
+          "landscape",
+          "table",
+          category,
+          monthFilter,
+          () => setPrintMode("table"),
+          () => setPrintMode("all")
+        );
+      } else if (pendingPrintType === "receipts") {
+        handlePrintWithTitle(
+          "portrait",
+          "receipts",
+          category,
+          monthFilter,
+          () => setPrintMode("receipts"),
+          () => setPrintMode("all")
+        );
+      }
+    } catch (err) {
+      console.error("Gagal menyimpan keterangan", err);
+      alert("Gagal menyimpan keterangan.");
+    } finally {
+      setSavingNotes(false);
+    }
+  };
+
+  // Get the month label for the current filter
+  const reportMonthLabel = monthFilter !== "all" ? formatMonthLabel(monthFilter) : "Semua Bulan";
+
   return (
     <div className="space-y-8 animate-slide-in-bottom pb-10">
       <div className="flex flex-col md:flex-row md:items-end justify-between gap-6 no-print">
@@ -199,6 +495,24 @@ export function StrukClient({ dataPln, dataOrbit }: StrukClientProps) {
           <p className="text-slate-500 mt-3 font-bold text-sm uppercase tracking-widest pl-1 border-l-4 border-blue-500 ml-1">
             Cetak Struk Pembelian
           </p>
+        </div>
+        <div className="flex gap-4">
+          <Button
+            onClick={() => handleOpenReview("table")}
+            disabled={filteredData.length === 0}
+            className="bg-blue-600 hover:bg-blue-700 text-white shadow-lg shadow-blue-600/20 rounded-2xl h-14 px-6 font-black uppercase text-[11px] tracking-widest flex items-center gap-2 transition-all active:scale-95"
+          >
+            <Printer className="h-4 w-4" />
+            Cetak Tabel (Landscape)
+          </Button>
+          <Button
+            onClick={() => handleOpenReview("receipts")}
+            disabled={filteredData.length === 0}
+            className="bg-emerald-600 hover:bg-emerald-700 text-white shadow-lg shadow-emerald-600/20 rounded-2xl h-14 px-6 font-black uppercase text-[11px] tracking-widest flex items-center gap-2 transition-all active:scale-95"
+          >
+            <Printer className="h-4 w-4" />
+            Cetak Struk (Portrait)
+          </Button>
         </div>
       </div>
 
@@ -467,20 +781,213 @@ export function StrukClient({ dataPln, dataOrbit }: StrukClientProps) {
                 Pilih transaksi dari tabel untuk melihat struk
               </div>
             )}
+
+            {selectedTrx && (
+              <div className="mt-6 bg-white p-6 rounded-3xl border border-slate-200 shadow-sm no-print space-y-4">
+                <h4 className="font-extrabold text-sm text-slate-700 flex items-center gap-2">
+                  <Edit3 className="h-4 w-4 text-blue-500" />
+                  Keterangan Stasiun / Asset
+                </h4>
+                <div className="space-y-3">
+                  <Input 
+                    type="text" 
+                    placeholder="Masukkan keterangan stasiun..." 
+                    value={keteranganInput}
+                    onChange={(e) => setKeteranganInput(e.target.value)}
+                    className="h-12 rounded-xl font-medium border-slate-200 focus-visible:ring-blue-500/10 focus-visible:ring-4"
+                  />
+                  <Button 
+                    onClick={handleUpdateKeterangan} 
+                    disabled={updatingKeterangan}
+                    className="w-full bg-slate-800 hover:bg-slate-900 text-white rounded-xl py-4 font-bold transition-all active:scale-95 flex items-center justify-center gap-2"
+                  >
+                    {updatingKeterangan ? <Loader2 className="w-4 h-4 animate-spin" /> : null}
+                    Simpan Keterangan
+                  </Button>
+                </div>
+              </div>
+            )}
           </div>
         </div>
+      </div>
+
+      {/* Review Dialog */}
+      <Dialog open={isReviewOpen} onOpenChange={setIsReviewOpen}>
+        <DialogContent className="max-w-4xl max-h-[85vh] flex flex-col p-6 rounded-3xl bg-white border border-slate-200 shadow-2xl">
+          <DialogHeader className="border-b border-slate-100 pb-4">
+            <DialogTitle className="text-2xl font-black text-slate-900 flex items-center gap-3">
+              <Printer className="h-6 w-6 text-blue-500" />
+              Review Keterangan & Cetak
+            </DialogTitle>
+            <p className="text-sm text-slate-500 font-medium">
+              Review dan lengkapi keterangan stasiun untuk periode ini sebelum melanjutkan cetak.
+            </p>
+          </DialogHeader>
+
+          <div className="flex-1 overflow-y-auto py-4 space-y-4 no-scrollbar">
+            <div className="border border-slate-200 rounded-2xl overflow-hidden shadow-sm">
+              <Table>
+                <TableHeader className="bg-slate-50">
+                  <TableRow>
+                    <TableHead className="w-[80px] font-black uppercase text-[10px] text-slate-400 py-3 pl-6">No</TableHead>
+                    <TableHead className="w-[180px] font-black uppercase text-[10px] text-slate-400">ID Stasiun</TableHead>
+                    <TableHead className="w-[180px] font-black uppercase text-[10px] text-slate-400">Status Transaksi</TableHead>
+                    <TableHead className="font-black uppercase text-[10px] text-slate-400 pr-6">Keterangan / Notes</TableHead>
+                  </TableRow>
+                </TableHeader>
+                <TableBody>
+                  {filteredData.map((trx, idx) => {
+                    const isPlaceholder = trx.ref_id.startsWith("placeholder-");
+                    return (
+                      <TableRow key={trx.ref_id} className="hover:bg-slate-50/50">
+                        <TableCell className="font-bold text-slate-500 py-3 pl-6">{idx + 1}</TableCell>
+                        <TableCell className="font-extrabold text-slate-800">{trx.nama_stasiun}</TableCell>
+                        <TableCell>
+                          {isPlaceholder ? (
+                            <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-bold bg-amber-50 text-amber-700 border border-amber-200">
+                              Tidak Ada Transaksi
+                            </span>
+                          ) : (
+                            <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-bold bg-emerald-50 text-emerald-700 border border-emerald-200">
+                              Ada Transaksi (Rp {trx.price.toLocaleString("id-ID")})
+                            </span>
+                          )}
+                        </TableCell>
+                        <TableCell className="pr-6">
+                          <Input
+                            type="text"
+                            placeholder="Input keterangan..."
+                            value={reviewNotes[trx.asset_id] ?? ""}
+                            onChange={(e) =>
+                              setReviewNotes((prev) => ({
+                                ...prev,
+                                [trx.asset_id]: e.target.value,
+                              }))
+                            }
+                            className="h-10 rounded-xl border-slate-200 focus-visible:ring-blue-500/10 focus-visible:ring-4 font-medium"
+                          />
+                        </TableCell>
+                      </TableRow>
+                    );
+                  })}
+                </TableBody>
+              </Table>
+            </div>
+          </div>
+
+          <DialogFooter className="border-t border-slate-100 pt-4 flex gap-3">
+            <Button
+              variant="outline"
+              onClick={() => setIsReviewOpen(false)}
+              className="rounded-xl px-6 h-12 font-bold text-slate-500 border-slate-200 hover:bg-slate-50"
+            >
+              Batal
+            </Button>
+            <Button
+              onClick={handleSaveAndPrint}
+              disabled={savingNotes}
+              className="bg-blue-600 hover:bg-blue-700 text-white rounded-xl px-8 h-12 font-bold shadow-lg shadow-blue-600/20 flex items-center gap-2"
+            >
+              {savingNotes ? (
+                <>
+                  <Loader2 className="h-4 w-4 animate-spin" />
+                  Menyimpan...
+                </>
+              ) : (
+                <>
+                  <Printer className="h-4 w-4" />
+                  Simpan & Cetak
+                </>
+              )}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* ====== PRINT-ONLY: Full Report Layout ====== */}
+      <div className={cn(
+        "print-report-container",
+        printMode === "table" && "print-mode-table",
+        printMode === "receipts" && "print-mode-receipts"
+      )}>
+        <ReportSummaryTable
+          filteredData={filteredData}
+          activeTab={activeTab}
+          reportMonthLabel={reportMonthLabel}
+          formatRupiah={formatRupiah}
+          computeReceiptDetails={computeReceiptDetails}
+        />
+
+        <ReceiptGrid
+          filteredData={filteredData}
+          activeTab={activeTab}
+          reportMonthLabel={reportMonthLabel}
+          formatRupiah={formatRupiah}
+          computeReceiptDetails={computeReceiptDetails}
+          voucherNameMap={(sku) => {
+            let voucherName = "Telkomsel Data Orbit 20 GB 90 Hari";
+            if (sku === "ORBIT10") voucherName = "Telkomsel Data Orbit 10 GB 7 Hari";
+            if (sku === "ORBIT30") voucherName = "Telkomsel Data Orbit 30 GB 30 Hari";
+            if (sku === "ORBIT50") voucherName = "Telkomsel Data Orbit 50 GB 30 Hari";
+            if (sku === "ORBIT100") voucherName = "Telkomsel Data Orbit 100 GB 30 Hari";
+            return voucherName;
+          }}
+        />
       </div>
       
       {/* Print Styles */}
       <style dangerouslySetInnerHTML={{ __html: `
+        /* === SCREEN: hide print-only elements === */
+        .print-report-container {
+          display: none;
+        }
+
+        /* Page settings outside @media print for Chromium named page support */
+        @page {
+          size: A4 portrait;
+          margin: 10mm 10mm;
+        }
+
+        @page landscape-sheet {
+          size: A4 landscape;
+          margin: 10mm 10mm;
+        }
+
+        .report-summary-page {
+          page: landscape-sheet;
+        }
+
         @media print {
+          /* Reset Next.js layout wrappers to allow chromium named page sizes (landscape/portrait mix) */
+          html, body, main, main > div, div.flex, div.flex-1 {
+            height: auto !important;
+            min-height: 0 !important;
+            max-height: none !important;
+            overflow: visible !important;
+            position: static !important;
+            display: block !important;
+            width: 100% !important;
+          }
+
+          /* Hide everything on screen by default */
           body * {
             visibility: hidden;
           }
-          .print\\:max-w-full, .print\\:max-w-full * {
-            visibility: visible;
+
+          /* Hide the screen-only UI */
+          .no-print {
+            display: none !important;
           }
-          .print\\:max-w-full {
+
+          /* Show the report container */
+          .print-report-container,
+          .print-report-container * {
+            visibility: visible !important;
+            display: revert;
+          }
+
+          .print-report-container {
+            display: block !important;
             position: absolute;
             left: 0;
             top: 0;
@@ -488,8 +995,161 @@ export function StrukClient({ dataPln, dataOrbit }: StrukClientProps) {
             margin: 0;
             padding: 0;
           }
-          .no-print {
+
+          .report-summary-page {
+            page-break-after: always;
+            break-after: page;
+          }
+
+          /* Hide receipts when printMode is table */
+          .print-mode-table .report-receipts-page {
             display: none !important;
+          }
+
+          /* Hide table when printMode is receipts */
+          .print-mode-receipts .report-summary-page {
+            display: none !important;
+          }
+
+          /* Report pages */
+          .report-page {
+            page-break-after: always;
+            break-after: page;
+            padding: 0;
+          }
+
+          .report-page:last-child {
+            page-break-after: auto;
+            break-after: auto;
+          }
+
+          /* Page header shown at top of every receipt page */
+          .receipt-page-header {
+            text-align: center;
+            margin-bottom: 10px;
+            padding-bottom: 6px;
+            border-bottom: 1.5px solid #334155;
+            font-family: 'Segoe UI', Arial, sans-serif;
+          }
+
+          /* Summary table */
+          .report-summary-table {
+            width: 100%;
+            border-collapse: collapse;
+            font-size: 10px;
+            font-family: 'Segoe UI', Arial, sans-serif;
+          }
+
+          .report-summary-table th {
+            background: none;
+            border: 1px solid #475569;
+            padding: 6px 8px;
+            text-align: left;
+            font-weight: 800;
+            font-size: 9px;
+            text-transform: uppercase;
+            letter-spacing: 0.03em;
+            white-space: nowrap;
+          }
+
+          .report-summary-table td {
+            border: 1px solid #94a3b8;
+            padding: 5px 8px;
+            font-size: 10px;
+          }
+
+          .report-summary-table tfoot td {
+            border-top: 2px solid #334155;
+            font-size: 11px;
+            padding: 8px;
+          }
+
+          /* Receipt grid — base: 3 columns */
+          .receipt-grid {
+            display: grid;
+            grid-template-columns: repeat(3, 1fr);
+            gap: 8px;
+            align-items: stretch;
+          }
+
+          /* PLN: 3×2 = 6 per page */
+          .receipt-grid-2row {
+            grid-template-rows: repeat(2, 1fr);
+          }
+
+          /* Orbit: 3×4 = 12 per page */
+          .receipt-grid-4row {
+            grid-template-rows: repeat(4, 1fr);
+          }
+
+          .receipt-grid-item {
+            break-inside: avoid;
+            page-break-inside: avoid;
+            text-align: center;
+            display: flex;
+            flex-direction: column;
+          }
+
+          .receipt-card {
+            border: 1px solid #64748b;
+            padding: 8px 10px;
+            font-family: 'Courier New', Courier, monospace;
+            font-size: 9px;
+            line-height: 1.4;
+            text-align: left;
+            background: transparent;
+            /* Stretch card to fill row height equally */
+            flex: 1;
+            display: flex;
+            flex-direction: column;
+          }
+
+          .receipt-station-label {
+            font-size: 10px;
+            font-weight: 800;
+            text-align: center;
+            margin-top: 3px;
+            padding: 3px 6px;
+            background: transparent;
+            border: 1px solid #64748b;
+            text-transform: uppercase;
+            letter-spacing: 0.03em;
+          }
+
+          .receipt-info {
+            line-height: 1.5;
+          }
+
+          .receipt-row {
+            display: flex;
+            font-size: 9px;
+          }
+
+          .receipt-label {
+            width: 75px;
+            flex-shrink: 0;
+            font-size: 9px;
+          }
+
+          .receipt-value {
+            margin-left: 4px;
+            word-break: break-all;
+          }
+
+          .receipt-amount {
+            flex: 1;
+            text-align: right;
+          }
+
+          /* Each receipt page breaks after itself */
+          .report-receipts-page {
+            page-break-after: always;
+            break-after: page;
+          }
+
+          .report-receipts-page:last-child {
+            page-break-after: auto;
+            break-after: auto;
           }
         }
       `}} />

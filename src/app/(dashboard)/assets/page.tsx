@@ -63,6 +63,10 @@ export default function AssetsPage() {
     segment_power: "",
     pln_sku: "pln100",
     orbit_sku: "orbit20",
+    provinsi: "",
+    kabupaten: "",
+    detail_lokasi: "",
+    keterangan: "",
   });
 
   const fetchAssets = async () => {
@@ -143,7 +147,11 @@ export default function AssetsPage() {
           operator_wa: formData.operator_wa,
           customer_name: formData.verified_name,
           segment_power: formData.segment_power,
-          default_sku: formData.pln_sku
+          default_sku: formData.pln_sku,
+          provinsi: formData.provinsi,
+          kabupaten: formData.kabupaten,
+          detail_lokasi: formData.detail_lokasi,
+          keterangan: formData.keterangan
         }),
       });
 
@@ -159,7 +167,11 @@ export default function AssetsPage() {
             nama_stasiun: formData.nama_stasiun,
             phone_number: formData.phone_number,
             operator_wa: formData.operator_wa,
-            default_sku: formData.orbit_sku
+            default_sku: formData.orbit_sku,
+            provinsi: formData.provinsi,
+            kabupaten: formData.kabupaten,
+            detail_lokasi: formData.detail_lokasi,
+            keterangan: formData.keterangan
           }),
         });
         const orbitJson = await orbitRes.json();
@@ -177,6 +189,10 @@ export default function AssetsPage() {
         segment_power: "",
         pln_sku: "pln100",
         orbit_sku: "orbit20",
+        provinsi: "",
+        kabupaten: "",
+        detail_lokasi: "",
+        keterangan: "",
       });
       setVerifiedPln(false);
       fetchAssets();
@@ -321,6 +337,55 @@ export default function AssetsPage() {
                     required
                     className="h-14 rounded-2xl border-slate-100 bg-slate-50/50 focus:bg-white transition-all font-bold"
                   />
+                </div>
+
+                {/* Informasi Lokasi */}
+                <div className="pt-2 border-t border-slate-100">
+                  <p className="font-black text-[10px] uppercase tracking-widest text-slate-400 pl-1 mb-4">Informasi Lokasi (Untuk Laporan PDF)</p>
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                    <div className="space-y-2">
+                      <Label htmlFor="provinsi" className="font-black text-[10px] uppercase tracking-widest text-slate-400 pl-1">Provinsi</Label>
+                      <Input 
+                        id="provinsi" 
+                        placeholder="e.g. Nusa Tenggara Barat" 
+                        value={formData.provinsi}
+                        onChange={(e) => setFormData({...formData, provinsi: e.target.value})}
+                        className="h-14 rounded-2xl border-slate-100 bg-slate-50/50 focus:bg-white transition-all font-bold"
+                      />
+                    </div>
+                    <div className="space-y-2">
+                      <Label htmlFor="kabupaten" className="font-black text-[10px] uppercase tracking-widest text-slate-400 pl-1">Kabupaten / Kota</Label>
+                      <Input 
+                        id="kabupaten" 
+                        placeholder="e.g. Kabupaten Sumbawa" 
+                        value={formData.kabupaten}
+                        onChange={(e) => setFormData({...formData, kabupaten: e.target.value})}
+                        className="h-14 rounded-2xl border-slate-100 bg-slate-50/50 focus:bg-white transition-all font-bold"
+                      />
+                    </div>
+                  </div>
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 mt-4">
+                    <div className="space-y-2">
+                      <Label htmlFor="detail_lokasi" className="font-black text-[10px] uppercase tracking-widest text-slate-400 pl-1">Detail Lokasi</Label>
+                      <Input 
+                        id="detail_lokasi" 
+                        placeholder="e.g. Bendungan Mamak" 
+                        value={formData.detail_lokasi}
+                        onChange={(e) => setFormData({...formData, detail_lokasi: e.target.value})}
+                        className="h-14 rounded-2xl border-slate-100 bg-slate-50/50 focus:bg-white transition-all font-bold"
+                      />
+                    </div>
+                    <div className="space-y-2">
+                      <Label htmlFor="keterangan" className="font-black text-[10px] uppercase tracking-widest text-slate-400 pl-1">Keterangan</Label>
+                      <Input 
+                        id="keterangan" 
+                        placeholder="e.g. Daya pompa 1.5 HP" 
+                        value={formData.keterangan}
+                        onChange={(e) => setFormData({...formData, keterangan: e.target.value})}
+                        className="h-14 rounded-2xl border-slate-100 bg-slate-50/50 focus:bg-white transition-all font-bold"
+                      />
+                    </div>
+                  </div>
                 </div>
 
                 <DialogFooter className="pt-4">

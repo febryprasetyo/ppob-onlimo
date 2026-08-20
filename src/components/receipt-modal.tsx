@@ -20,6 +20,8 @@ import {
 import {
   Dialog,
   DialogContent,
+  DialogTitle,
+  DialogDescription,
 } from "@/components/ui/dialog";
 import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
@@ -116,8 +118,8 @@ export function ReceiptModal({
                   {theme.icon}
                 </div>
               </div>
-              <h2 className="text-3xl font-black text-white relative z-10 uppercase tracking-tight leading-none">{title}</h2>
-              <p className="text-white/70 font-black text-[10px] mt-3 relative z-10 uppercase tracking-[0.3em]">{station_name}</p>
+              <DialogTitle className="text-3xl font-black text-white relative z-10 uppercase tracking-tight leading-none">{title}</DialogTitle>
+              <DialogDescription className="text-white/70 font-black text-[10px] mt-3 relative z-10 uppercase tracking-[0.3em]">{station_name}</DialogDescription>
             </div>
 
             <div className="bg-white rounded-t-[3.5rem] -mt-10 relative z-20 p-10 space-y-8">

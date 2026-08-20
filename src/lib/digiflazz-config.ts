@@ -3,6 +3,9 @@
  * Gunakan file ini untuk mengatur mode (dev/prod) dan credentials
  */
 
+import dotenv from "dotenv";
+dotenv.config();
+
 const MODE = process.env.DIGIFLAZZ_MODE || 'dev';
 
 export const DIGIFLAZZ_CONFIG = {

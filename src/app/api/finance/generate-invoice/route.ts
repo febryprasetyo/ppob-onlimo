@@ -3,11 +3,16 @@ import db from "@/lib/db";
 
 export async function POST(req: Request) {
   try {
-    const { period_month, period_year, selected_orbit_ids = [], unique_code = 0 } = await req.json();
-    // 1. Get PLN assets joined with digiflazz_products to get current prices
-    const plnAssets = await db("assets_pln")
-      .leftJoin("digiflazz_products", "assets_pln.default_sku", "digiflazz_products.buyer_sku_code")
-      .select("digiflazz_products.price", "assets_pln.default_sku", "assets_pln.nama_stasiun", "digiflazz_products.product_name");
+    const { period_month, period_year, selected_orbit_ids = [], selected_pln_ids = [], unique_code = 0 } = await req.json();
+    
+    // 1. Get Selected PLN assets joined with digiflazz_products to get current prices
+    let plnAssets: any[] = [];
+    if (selected_pln_ids && selected_pln_ids.length > 0) {
+      plnAssets = await db("assets_pln")
+        .leftJoin("digiflazz_products", "assets_pln.default_sku", "digiflazz_products.buyer_sku_code")
+        .whereIn("assets_pln.id", selected_pln_ids)
+        .select("digiflazz_products.price", "assets_pln.default_sku", "assets_pln.nama_stasiun", "digiflazz_products.product_name");
+    }
     
     const plnCount = plnAssets.length;
 

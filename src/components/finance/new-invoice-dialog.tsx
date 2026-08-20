@@ -22,6 +22,12 @@ interface OrbitAsset {
   phone_number: string;
 }
 
+interface PlnAsset {
+  id: number;
+  nama_stasiun: string;
+  meter_number: string;
+}
+
 export function NewInvoiceDialog({ 
   open, 
   onOpenChange, 
@@ -35,6 +41,8 @@ export function NewInvoiceDialog({
   const [loading, setLoading] = useState(false);
   const [orbitAssets, setOrbitAssets] = useState<OrbitAsset[]>([]);
   const [selectedOrbits, setSelectedOrbits] = useState<number[]>([]);
+  const [plnAssets, setPlnAssets] = useState<PlnAsset[]>([]);
+  const [selectedPlns, setSelectedPlns] = useState<number[]>([]);
   const [uniqueCode, setUniqueCode] = useState("");
   const [summary, setSummary] = useState<{
     plnTotal: number;
@@ -54,6 +62,9 @@ export function NewInvoiceDialog({
       fetch("/api/finance/orbit-assets")
         .then(res => res.json())
         .then(data => setOrbitAssets(data));
+      fetch("/api/finance/pln-assets")
+        .then(res => res.json())
+        .then(data => setPlnAssets(data));
     }
   }, [open]);
 
@@ -64,7 +75,8 @@ export function NewInvoiceDialog({
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
-          selected_orbit_ids: selectedOrbits
+          selected_orbit_ids: selectedOrbits,
+          selected_pln_ids: selectedPlns
         }),
       });
       const json = await res.json();
@@ -91,6 +103,7 @@ export function NewInvoiceDialog({
           period_month: period.month,
           period_year: period.year,
           selected_orbit_ids: selectedOrbits,
+          selected_pln_ids: selectedPlns,
           unique_code: parseInt(uniqueCode || "0")
         }),
       });
@@ -119,6 +132,20 @@ export function NewInvoiceDialog({
       setSelectedOrbits([]);
     } else {
       setSelectedOrbits(orbitAssets.map(a => a.id));
+    }
+  };
+
+  const togglePln = (id: number) => {
+    setSelectedPlns(prev => 
+      prev.includes(id) ? prev.filter(i => i !== id) : [...prev, id]
+    );
+  };
+
+  const toggleAllPlns = () => {
+    if (selectedPlns.length === plnAssets.length) {
+      setSelectedPlns([]);
+    } else {
+      setSelectedPlns(plnAssets.map(a => a.id));
     }
   };
 
@@ -167,57 +194,107 @@ export function NewInvoiceDialog({
                 </div>
               </div>
 
-              <div className="space-y-4">
-                <div className="flex items-center justify-between px-1">
-                  <div className="space-y-1">
-                    <Label className="text-base font-black text-slate-800 tracking-tight flex items-center gap-2">
-                       Pilih Modem Orbit 
-                       <Badge variant="outline" className="rounded-full bg-blue-50 text-blue-600 border-blue-100 font-black text-[9px] uppercase tracking-widest">{selectedOrbits.length} terpilih</Badge>
-                    </Label>
-                    <p className="text-[10px] font-bold text-slate-400 uppercase tracking-wider">Pilih aset yang akan dilakukan pengisian paket data</p>
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                {/* PLN Selection */}
+                <div className="space-y-4">
+                  <div className="flex items-center justify-between px-1">
+                    <div className="space-y-1">
+                      <Label className="text-base font-black text-slate-800 tracking-tight flex items-center gap-2">
+                         Pilih Aset PLN 
+                         <Badge variant="outline" className="rounded-full bg-amber-50 text-amber-600 border-amber-100 font-black text-[9px] uppercase tracking-widest">{selectedPlns.length} terpilih</Badge>
+                      </Label>
+                      <p className="text-[10px] font-bold text-slate-400 uppercase tracking-wider">Pilih aset untuk tagihan listrik</p>
+                    </div>
+                    <Button variant="ghost" size="sm" className="h-8 rounded-xl font-black text-[10px] uppercase tracking-widest text-slate-400 hover:text-amber-600 hover:bg-amber-50 transition-all" onClick={toggleAllPlns}>
+                      {selectedPlns.length === plnAssets.length && plnAssets.length > 0 ? "Lepas Semua" : "Pilih Semua"}
+                    </Button>
                   </div>
-                  <Button variant="ghost" size="sm" className="h-8 rounded-xl font-black text-[10px] uppercase tracking-widest text-slate-400 hover:text-blue-600 hover:bg-blue-50 transition-all" onClick={toggleAllOrbits}>
-                    {selectedOrbits.length === orbitAssets.length ? "Lepas Semua" : "Pilih Semua"}
-                  </Button>
-                </div>
-                <div className="border border-slate-100 rounded-[2rem] bg-slate-50/30 overflow-hidden shadow-sm">
-                  <div className="divide-y divide-slate-100 max-h-56 overflow-y-auto no-scrollbar">
-                    {orbitAssets.length === 0 ? (
-                      <div className="p-8 text-center text-slate-300 italic flex flex-col items-center gap-2">
-                        <Loader2 className="h-6 w-6 animate-spin text-blue-500" />
-                        <p className="text-[10px] font-black uppercase tracking-widest">Memuat database aset...</p>
-                      </div>
-                    ) : (
-                      orbitAssets.map((asset) => (
-                        <div key={asset.id} className="group flex items-center gap-4 p-4 hover:bg-white transition-all cursor-pointer" onClick={() => toggleOrbit(asset.id)}>
-                          <div className={cn(
-                            "w-10 h-10 rounded-xl flex items-center justify-center transition-all",
-                            selectedOrbits.includes(asset.id) ? "bg-blue-600 text-white shadow-lg shadow-blue-500/30" : "bg-white text-slate-300 border border-slate-200"
-                          )}>
-                             <Checkbox 
-                               id={`orbit-${asset.id}`} 
-                               className="hidden"
-                               checked={selectedOrbits.includes(asset.id)}
-                            />
-                            <Wifi className="h-5 w-5" />
-                          </div>
-                          <div className="flex-1">
-                            <p className="font-black text-slate-700 text-sm tracking-tight">{asset.nama_stasiun}</p>
-                            <p className="text-[10px] text-slate-400 font-mono font-bold uppercase tracking-widest mt-0.5">{asset.phone_number}</p>
-                          </div>
-                          {selectedOrbits.includes(asset.id) && (
-                            <div className="w-6 h-6 rounded-full bg-blue-50 flex items-center justify-center">
-                              <div className="w-2 h-2 rounded-full bg-blue-600" />
-                            </div>
-                          )}
+                  <div className="border border-slate-100 rounded-[2rem] bg-slate-50/30 overflow-hidden shadow-sm">
+                    <div className="divide-y divide-slate-100 max-h-56 overflow-y-auto no-scrollbar">
+                      {plnAssets.length === 0 ? (
+                        <div className="p-8 text-center text-slate-300 italic flex flex-col items-center gap-2">
+                          <Loader2 className="h-6 w-6 animate-spin text-amber-500" />
+                          <p className="text-[10px] font-black uppercase tracking-widest">Memuat database PLN...</p>
                         </div>
-                      ))
-                    )}
+                      ) : (
+                        plnAssets.map((asset) => (
+                          <div key={asset.id} className="group flex items-center gap-4 p-4 hover:bg-white transition-all cursor-pointer" onClick={() => togglePln(asset.id)}>
+                            <div className={cn(
+                              "w-10 h-10 rounded-xl flex items-center justify-center transition-all",
+                              selectedPlns.includes(asset.id) ? "bg-amber-500 text-white shadow-lg shadow-amber-500/30" : "bg-white text-slate-300 border border-slate-200"
+                            )}>
+                               <Checkbox 
+                                 id={`pln-${asset.id}`} 
+                                 className="hidden"
+                                 checked={selectedPlns.includes(asset.id)}
+                              />
+                              <Zap className="h-5 w-5" />
+                            </div>
+                            <div className="flex-1">
+                              <p className="font-black text-slate-700 text-sm tracking-tight">{asset.nama_stasiun}</p>
+                              <p className="text-[10px] text-slate-400 font-mono font-bold uppercase tracking-widest mt-0.5">{asset.meter_number}</p>
+                            </div>
+                            {selectedPlns.includes(asset.id) && (
+                              <div className="w-6 h-6 rounded-full bg-amber-50 flex items-center justify-center">
+                                <div className="w-2 h-2 rounded-full bg-amber-500" />
+                              </div>
+                            )}
+                          </div>
+                        ))
+                      )}
+                    </div>
                   </div>
                 </div>
-                <div className="flex items-center gap-2 px-2">
-                  <Zap className="h-3 w-3 text-amber-500 fill-amber-500" />
-                  <p className="text-[9px] text-slate-400 font-bold uppercase tracking-widest">Aset PLN dialokasikan otomatis untuk seluruh aset aktif.</p>
+
+                {/* Orbit Selection */}
+                <div className="space-y-4">
+                  <div className="flex items-center justify-between px-1">
+                    <div className="space-y-1">
+                      <Label className="text-base font-black text-slate-800 tracking-tight flex items-center gap-2">
+                         Pilih Modem Orbit 
+                         <Badge variant="outline" className="rounded-full bg-blue-50 text-blue-600 border-blue-100 font-black text-[9px] uppercase tracking-widest">{selectedOrbits.length} terpilih</Badge>
+                      </Label>
+                      <p className="text-[10px] font-bold text-slate-400 uppercase tracking-wider">Pilih aset untuk paket data</p>
+                    </div>
+                    <Button variant="ghost" size="sm" className="h-8 rounded-xl font-black text-[10px] uppercase tracking-widest text-slate-400 hover:text-blue-600 hover:bg-blue-50 transition-all" onClick={toggleAllOrbits}>
+                      {selectedOrbits.length === orbitAssets.length && orbitAssets.length > 0 ? "Lepas Semua" : "Pilih Semua"}
+                    </Button>
+                  </div>
+                  <div className="border border-slate-100 rounded-[2rem] bg-slate-50/30 overflow-hidden shadow-sm">
+                    <div className="divide-y divide-slate-100 max-h-56 overflow-y-auto no-scrollbar">
+                      {orbitAssets.length === 0 ? (
+                        <div className="p-8 text-center text-slate-300 italic flex flex-col items-center gap-2">
+                          <Loader2 className="h-6 w-6 animate-spin text-blue-500" />
+                          <p className="text-[10px] font-black uppercase tracking-widest">Memuat database Orbit...</p>
+                        </div>
+                      ) : (
+                        orbitAssets.map((asset) => (
+                          <div key={asset.id} className="group flex items-center gap-4 p-4 hover:bg-white transition-all cursor-pointer" onClick={() => toggleOrbit(asset.id)}>
+                            <div className={cn(
+                              "w-10 h-10 rounded-xl flex items-center justify-center transition-all",
+                              selectedOrbits.includes(asset.id) ? "bg-blue-600 text-white shadow-lg shadow-blue-500/30" : "bg-white text-slate-300 border border-slate-200"
+                            )}>
+                               <Checkbox 
+                                 id={`orbit-${asset.id}`} 
+                                 className="hidden"
+                                 checked={selectedOrbits.includes(asset.id)}
+                              />
+                              <Wifi className="h-5 w-5" />
+                            </div>
+                            <div className="flex-1">
+                              <p className="font-black text-slate-700 text-sm tracking-tight">{asset.nama_stasiun}</p>
+                              <p className="text-[10px] text-slate-400 font-mono font-bold uppercase tracking-widest mt-0.5">{asset.phone_number}</p>
+                            </div>
+                            {selectedOrbits.includes(asset.id) && (
+                              <div className="w-6 h-6 rounded-full bg-blue-50 flex items-center justify-center">
+                                <div className="w-2 h-2 rounded-full bg-blue-600" />
+                              </div>
+                            )}
+                          </div>
+                        ))
+                      )}
+                    </div>
+                  </div>
                 </div>
               </div>
             </div>
@@ -234,7 +311,7 @@ export function NewInvoiceDialog({
                         </div>
                         <div>
                           <p className="text-[10px] font-black text-slate-400 uppercase tracking-widest">Total Tagihan PLN</p>
-                          <p className="font-black text-slate-700 tracking-tight">Listrik Stasiun</p>
+                          <p className="font-black text-slate-700 tracking-tight">{selectedPlns.length} Aset</p>
                         </div>
                       </div>
                       <p className="text-lg font-black text-slate-900 tabular-nums">Rp {summary?.plnTotal.toLocaleString("id-ID")}</p>

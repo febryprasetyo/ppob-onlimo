@@ -3,12 +3,16 @@ import db from "@/lib/db";
 
 export async function POST(req: Request) {
   try {
-    const { selected_orbit_ids = [] } = await req.json();
+    const { selected_orbit_ids = [], selected_pln_ids = [] } = await req.json();
     
-    // 1. Get PLN assets
-    const plnAssets = await db("assets_pln")
-      .leftJoin("digiflazz_products", "assets_pln.default_sku", "digiflazz_products.buyer_sku_code")
-      .select("digiflazz_products.price", "assets_pln.default_sku");
+    // 1. Get Selected PLN assets
+    let plnAssets: any[] = [];
+    if (selected_pln_ids && selected_pln_ids.length > 0) {
+      plnAssets = await db("assets_pln")
+        .leftJoin("digiflazz_products", "assets_pln.default_sku", "digiflazz_products.buyer_sku_code")
+        .whereIn("assets_pln.id", selected_pln_ids)
+        .select("digiflazz_products.price", "assets_pln.default_sku");
+    }
     
     // 2. Get Selected Orbit assets
     let orbitAssets: any[] = [];

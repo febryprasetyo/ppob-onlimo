@@ -20,6 +20,7 @@ npm run build
 
 # 3. Handle PM2 Process
 APP_NAME="ppob"
+POLLER_NAME="ppob-poller"
 
 if pm2 list | grep -q "$APP_NAME"; then
     echo "♻️ Restarting existing PM2 process: $APP_NAME..."
@@ -29,5 +30,14 @@ else
     pm2 start npm --name "$APP_NAME" -- start
 fi
 
+if pm2 list | grep -q "$POLLER_NAME"; then
+    echo "♻️ Restarting existing PM2 process: $POLLER_NAME..."
+    pm2 restart $POLLER_NAME
+else
+    echo "🆕 Starting new PM2 process: $POLLER_NAME..."
+    pm2 start scripts/pending-poller.js --name "$POLLER_NAME"
+fi
+
 echo "✅ Deployment Successful!"
-pm2 status $APP_NAME
+pm2 status
+

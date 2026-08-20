@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect } from "react";
+import { useState, useEffect, Suspense } from "react";
 import { useRouter, useSearchParams, usePathname } from "next/navigation";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
@@ -24,7 +24,7 @@ import Link from "next/link";
 import { cn } from "@/lib/utils";
 import { NewInvoiceDialog } from "@/components/finance/new-invoice-dialog";
 
-export default function FinancePage() {
+function FinancePageContent() {
   const router = useRouter();
   const searchParams = useSearchParams();
   const pathname = usePathname();
@@ -349,3 +349,12 @@ export default function FinancePage() {
     </div>
   );
 }
+
+export default function FinancePage() {
+  return (
+    <Suspense fallback={<div className="p-8 text-slate-400 font-bold text-sm uppercase tracking-widest animate-pulse">Memuat halaman keuangan...</div>}>
+      <FinancePageContent />
+    </Suspense>
+  );
+}
+

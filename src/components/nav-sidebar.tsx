@@ -28,7 +28,7 @@ export function NavSidebar({ username, role, onClose }: NavSidebarProps) {
     { name: "Validasi ID PLN", href: "/check-pln", icon: Zap },
     { name: "Daftar Harga", href: "/price-list", icon: Tag },
     { name: "Keuangan", href: "/finance", icon: CreditCard },
-    { name: "E-Money", href: "/emoney", icon: Wallet },
+    { name: "Topup", href: "/topup", icon: Wallet },
     { name: "Struk Transaksi", href: "/struk", icon: Receipt },
     { name: "History", href: "/history", icon: History },
   ];

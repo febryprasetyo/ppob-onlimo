@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect, useMemo, useRef } from "react";
+import { useState, useEffect, useMemo } from "react";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -124,13 +124,10 @@ export default function WaBlastPage() {
   // Sending progress states
   const [isSending, setIsSending] = useState(false);
   const [sendProgress, setSendProgress] = useState(0);
-  const [currentSendingIndex, setCurrentSendingIndex] = useState<number>(-1);
   const [sendResults, setSendResults] = useState<SendResult[]>([]);
   const [sendingLogs, setSendingLogs] = useState<Array<{ text: string; time: string; type: "info" | "success" | "error" }>>([]);
   const [showConfirmModal, setShowConfirmModal] = useState(false);
   const [showFinishedModal, setShowFinishedModal] = useState(false);
-  const [stopRequested, setStopRequested] = useState(false);
-  const abortControllerRef = useRef<boolean>(false);
 
   // Fetch station contacts from assets
   const fetchContacts = async () => {
@@ -226,9 +223,9 @@ export default function WaBlastPage() {
 
   // Live preview message rendering
   const sampleContact = selectedContactsList[0] || contacts[0] || {
-    nama_stasiun: "KLHK299",
+    nama_stasiun: "Pos Pantau Bendungan Mamak",
     operator_wa: "087812345678",
-    detail_lokasi: "Stasiun Onlimo KLHK299",
+    detail_lokasi: "Bendungan Mamak",
     kabupaten: "Sumbawa",
     meter_number: "532109876543",
     phone_number: "081298765432",
@@ -248,7 +245,7 @@ export default function WaBlastPage() {
       }) + " WIB";
 
     return message
-      .replace(/{nama_stasiun}/gi, sampleContact.nama_stasiun || "KLHK299")
+      .replace(/{nama_stasiun}/gi, sampleContact.nama_stasiun || "Pos Pantau Bendungan")
       .replace(/{operator_wa}/gi, sampleContact.operator_wa || "0878XXXXXXXX")
       .replace(/{nomor_wa}/gi, sampleContact.operator_wa || "0878XXXXXXXX")
       .replace(/{meter_number}/gi, sampleContact.meter_number || "532109876543")
@@ -259,14 +256,11 @@ export default function WaBlastPage() {
       .replace(/{waktu}/gi, waktu);
   }, [message, sampleContact]);
 
-  // Execute WA Blast (Progressive iteration to prevent Gateway 504 Timeout)
+  // Execute WA Blast
   const startBlast = async () => {
     setShowConfirmModal(false);
     setIsSending(true);
-    setStopRequested(false);
-    abortControllerRef.current = false;
     setSendProgress(0);
-    setCurrentSendingIndex(-1);
     setSendResults([]);
     setSendingLogs([]);
 
@@ -280,90 +274,37 @@ export default function WaBlastPage() {
       provinsi: c.provinsi,
     }));
 
-    const total = recipients.length;
-    addLog(`Memulai pengiriman WA Blast ke ${total} stasiun...`, "info");
+    addLog(`Memulai pengiriman WA Blast ke ${recipients.length} stasiun...`, "info");
 
-    const results: SendResult[] = [];
-    let successCount = 0;
-    let failedCount = 0;
+    try {
+      const res = await fetch("/api/wa-blast/send", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          recipients,
+          message,
+          delayMs,
+        }),
+      });
 
-    for (let i = 0; i < total; i++) {
-      if (abortControllerRef.current) {
-        addLog(`Pengiriman dihentikan pada stasiun ke-${i + 1} dari ${total}.`, "info");
-        break;
+      const json = await res.json();
+
+      if (json.success) {
+        setSendResults(json.results || []);
+        setSendProgress(100);
+        addLog(`Broadcast selesai! Berhasil: ${json.summary.successCount}, Gagal: ${json.summary.failedCount}`, "success");
+        setShowFinishedModal(true);
+      } else {
+        addLog(`Gagal memproses broadcast: ${json.error || "Unknown error"}`, "error");
+        alert(json.error || "Gagal memproses broadcast.");
       }
-
-      const item = recipients[i];
-      setCurrentSendingIndex(i);
-      addLog(`Mengirim (${i + 1}/${total}): ${item.nama_stasiun} (${item.operator_wa})...`, "info");
-
-      try {
-        const res = await fetch("/api/wa-blast/send", {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({
-            recipient: item,
-            message,
-          }),
-        });
-
-        if (!res.ok) {
-          const errText = await res.text();
-          throw new Error(`HTTP ${res.status}: ${errText.substring(0, 100)}`);
-        }
-
-        const json = await res.json();
-        if (json.success && json.result?.success) {
-          results.push(json.result);
-          successCount++;
-          addLog(`✅ Terkirim: ${item.nama_stasiun} (${item.operator_wa})`, "success");
-        } else {
-          const errMsg = json.result?.error || json.error || "Gagal terkirim melalui server WAHA";
-          results.push({
-            nama_stasiun: item.nama_stasiun,
-            operator_wa: item.operator_wa,
-            success: false,
-            error: errMsg,
-          });
-          failedCount++;
-          addLog(`❌ Gagal: ${item.nama_stasiun} (${item.operator_wa}) - ${errMsg}`, "error");
-        }
-      } catch (err: any) {
-        console.error(`Error sending to ${item.nama_stasiun}:`, err);
-        results.push({
-          nama_stasiun: item.nama_stasiun,
-          operator_wa: item.operator_wa,
-          success: false,
-          error: err.message || "Kesalahan jaringan",
-        });
-        failedCount++;
-        addLog(`❌ Gagal: ${item.nama_stasiun} - ${err.message}`, "error");
-      }
-
-      // Live update results & progress bar
-      const currentProgress = Math.round(((i + 1) / total) * 100);
-      setSendProgress(currentProgress);
-      setSendResults([...results]);
-
-      // Safe delay before sending next recipient
-      if (i < total - 1 && delayMs > 0 && !abortControllerRef.current) {
-        await new Promise((resolve) => setTimeout(resolve, delayMs));
-      }
+    } catch (err: any) {
+      console.error("WA Blast execute error:", err);
+      addLog(`Terjadi kesalahan sistem: ${err.message}`, "error");
+      alert("Terjadi kesalahan jaringan saat mengirim broadcast.");
+    } finally {
+      setIsSending(false);
     }
-
-    setIsSending(false);
-    setCurrentSendingIndex(-1);
-    addLog(
-      `Broadcast selesai! Berhasil: ${successCount}, Gagal: ${failedCount}`,
-      successCount > 0 ? "success" : "error"
-    );
-    setShowFinishedModal(true);
-  };
-
-  const handleStopBlast = () => {
-    abortControllerRef.current = true;
-    setStopRequested(true);
-    addLog("Menghentikan pengiriman... Harap tunggu item yang sedang berjalan.", "info");
   };
 
   const addLog = (text: string, type: "info" | "success" | "error" = "info") => {
@@ -721,7 +662,7 @@ export default function WaBlastPage() {
                 <div className="relative flex-1">
                   <Search className="absolute left-6 top-1/2 -translate-y-1/2 h-5 w-5 text-slate-400" />
                   <Input
-                    placeholder="Cari ID Stasiun (misal KLHK299), nomor WA operator, lokasi..."
+                    placeholder="Cari ID/Nama stasiun, nomor WA operator, lokasi..."
                     value={search}
                     onChange={(e) => setSearch(e.target.value)}
                     className="pl-14 h-14 bg-white border-slate-200 font-bold rounded-2xl text-sm"
@@ -1041,48 +982,22 @@ export default function WaBlastPage() {
 
                 {/* Progress bar during sending */}
                 {isSending && (
-                  <div className="p-6 bg-blue-50/70 rounded-2xl border border-blue-200 space-y-4 animate-in fade-in">
-                    <div className="flex items-center justify-between text-xs font-black uppercase tracking-widest text-blue-700">
+                  <div className="p-6 bg-blue-50/50 rounded-2xl border border-blue-100 space-y-3 animate-in fade-in">
+                    <div className="flex items-center justify-between text-xs font-black uppercase tracking-widest text-blue-600">
                       <span className="flex items-center gap-2">
-                        <Loader2 className="h-4 w-4 animate-spin text-blue-600" />
-                        {currentSendingIndex >= 0 && currentSendingIndex < validSelectedRecipients.length
-                          ? `Mengirim ke ${validSelectedRecipients[currentSendingIndex].nama_stasiun} (${currentSendingIndex + 1}/${validSelectedRecipients.length})...`
-                          : "Sedang Memproses..."}
+                        <Loader2 className="h-4 w-4 animate-spin" /> Sedang Mengirim Broadcast...
                       </span>
-                      <span className="font-mono text-sm font-black">{sendProgress}%</span>
+                      <span>{sendProgress}%</span>
                     </div>
-
-                    <div className="w-full bg-blue-100 h-3.5 rounded-full overflow-hidden p-0.5">
+                    <div className="w-full bg-blue-100 h-3 rounded-full overflow-hidden">
                       <div
-                        className="bg-blue-600 h-full rounded-full transition-all duration-300 shadow-sm"
+                        className="bg-blue-600 h-full rounded-full transition-all duration-300 animate-pulse"
                         style={{ width: `${Math.max(sendProgress, 5)}%` }}
                       />
                     </div>
-
-                    <div className="flex items-center justify-between pt-1">
-                      <div className="flex items-center gap-3 text-xs font-bold text-slate-600">
-                        <span className="text-emerald-600">
-                          Berhasil: {sendResults.filter((r) => r.success).length}
-                        </span>
-                        <span className="text-rose-600">
-                          Gagal: {sendResults.filter((r) => !r.success).length}
-                        </span>
-                        <span className="text-slate-400">
-                          Sisa: {Math.max(0, validSelectedRecipients.length - sendResults.length)}
-                        </span>
-                      </div>
-
-                      <Button
-                        type="button"
-                        variant="outline"
-                        size="sm"
-                        onClick={handleStopBlast}
-                        disabled={stopRequested}
-                        className="rounded-xl border-rose-200 text-rose-600 hover:bg-rose-50 hover:border-rose-300 text-[10px] font-black uppercase tracking-wider h-8 px-3"
-                      >
-                        {stopRequested ? "Menghentikan..." : "Hentikan Broadcast"}
-                      </Button>
-                    </div>
+                    <p className="text-[11px] text-slate-500 font-medium">
+                      Jangan tutup halaman ini hingga seluruh pesan selesai dikirim ke operator stasiun.
+                    </p>
                   </div>
                 )}
 
@@ -1106,7 +1021,7 @@ export default function WaBlastPage() {
                   >
                     {isSending ? (
                       <>
-                        <Loader2 className="h-5 w-5 animate-spin" /> Mengirim ({sendProgress}%)...
+                        <Loader2 className="h-5 w-5 animate-spin" /> Mengirim...
                       </>
                     ) : (
                       <>
@@ -1138,52 +1053,22 @@ export default function WaBlastPage() {
 
               <CardContent className="p-0">
                 <div className="max-h-[350px] overflow-y-auto divide-y divide-slate-100 no-scrollbar">
-                  {validSelectedRecipients.map((c, i) => {
-                    const result = sendResults.find((r) => r.nama_stasiun === c.nama_stasiun);
-                    const isCurrentlyProcessing = isSending && currentSendingIndex === i;
-
-                    return (
-                      <div
-                        key={i}
-                        className={cn(
-                          "p-4 transition-colors flex items-center justify-between gap-3",
-                          isCurrentlyProcessing ? "bg-blue-50/80" : "hover:bg-slate-50"
-                        )}
-                      >
-                        <div className="flex items-center gap-3 min-w-0">
-                          <div className="h-8 w-8 rounded-xl bg-slate-100 text-slate-600 flex items-center justify-center font-black text-xs shrink-0">
-                            {i + 1}
-                          </div>
-                          <div className="flex flex-col min-w-0">
-                            <span className="font-bold text-slate-800 text-xs truncate">{c.nama_stasiun}</span>
-                            <span className="font-mono text-[10px] text-slate-400">{c.operator_wa}</span>
-                          </div>
+                  {validSelectedRecipients.map((c, i) => (
+                    <div key={i} className="p-4 hover:bg-slate-50 transition-colors flex items-center justify-between gap-3">
+                      <div className="flex items-center gap-3 min-w-0">
+                        <div className="h-8 w-8 rounded-xl bg-slate-100 text-slate-600 flex items-center justify-center font-black text-xs shrink-0">
+                          {i + 1}
                         </div>
-
-                        <div className="flex items-center gap-2 shrink-0">
-                          {isCurrentlyProcessing ? (
-                            <Badge className="bg-blue-500 text-white font-bold text-[9px] uppercase tracking-wider animate-pulse flex items-center gap-1">
-                              <Loader2 className="h-3 w-3 animate-spin" /> Mengirim
-                            </Badge>
-                          ) : result ? (
-                            result.success ? (
-                              <Badge className="bg-emerald-500 text-white font-bold text-[9px] uppercase tracking-wider flex items-center gap-1">
-                                <Check className="h-3 w-3" /> Terkirim
-                              </Badge>
-                            ) : (
-                              <Badge variant="destructive" className="font-bold text-[9px] uppercase tracking-wider">
-                                Gagal
-                              </Badge>
-                            )
-                          ) : (
-                            <span className="text-[10px] font-bold text-slate-400 uppercase">
-                              {isSending ? "Menunggu" : "Siap"}
-                            </span>
-                          )}
+                        <div className="flex flex-col min-w-0">
+                          <span className="font-bold text-slate-800 text-xs truncate">{c.nama_stasiun}</span>
+                          <span className="font-mono text-[10px] text-slate-400">{c.operator_wa}</span>
                         </div>
                       </div>
-                    );
-                  })}
+                      <span className="text-[10px] font-bold text-slate-400 uppercase truncate max-w-[120px]">
+                        {c.kabupaten || c.detail_lokasi || "-"}
+                      </span>
+                    </div>
+                  ))}
                 </div>
               </CardContent>
             </Card>
@@ -1366,3 +1251,4 @@ export default function WaBlastPage() {
     </div>
   );
 }
+

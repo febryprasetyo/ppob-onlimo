@@ -85,9 +85,9 @@ export async function GET(req: Request) {
       }
     }
 
-    // Convert map to array and sort numerically by ID Stasiun (e.g. KLHK299 - KLHK317)
+    // Convert map to array and sort alphabetically by nama_stasiun
     const contacts = Array.from(stationMap.values()).sort((a, b) =>
-      a.nama_stasiun.localeCompare(b.nama_stasiun, undefined, { numeric: true, sensitivity: "base" })
+      a.nama_stasiun.localeCompare(b.nama_stasiun)
     );
 
     return NextResponse.json({

@@ -18,7 +18,9 @@ import {
   Search,
   MessageCircle,
   Database,
-  XCircle
+  XCircle,
+  Pencil,
+  Phone
 } from "lucide-react";
 import {
   Dialog,
@@ -49,6 +51,20 @@ export default function AssetsPage() {
     title: "",
     message: "",
   });
+
+  // Edit WA Modal State
+  const [editWaModal, setEditWaModal] = useState<{
+    open: boolean;
+    nama_stasiun: string;
+    operator_wa: string;
+    pln_id?: number;
+    orbit_id?: number;
+  }>({
+    open: false,
+    nama_stasiun: "",
+    operator_wa: "",
+  });
+  const [updatingWa, setUpdatingWa] = useState(false);
 
   // Form States
   const [saving, setSaving] = useState(false);
@@ -81,6 +97,35 @@ export default function AssetsPage() {
       console.error("Fetch assets failed", err);
     } finally {
       setLoading(false);
+    }
+  };
+
+  const handleSaveOperatorWa = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setUpdatingWa(true);
+    try {
+      const res = await fetch("/api/assets/update-operator-wa", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          nama_stasiun: editWaModal.nama_stasiun,
+          operator_wa: editWaModal.operator_wa,
+          pln_id: editWaModal.pln_id,
+          orbit_id: editWaModal.orbit_id,
+        }),
+      });
+      const json = await res.json();
+      if (json.success) {
+        setEditWaModal((prev) => ({ ...prev, open: false }));
+        showAlert("success", "Berhasil Diperbarui", `Nomor WA operator untuk stasiun ${editWaModal.nama_stasiun} telah diperbarui.`);
+        fetchAssets();
+      } else {
+        showAlert("error", "Gagal Memperbarui", json.error || "Gagal memperbarui nomor WA.");
+      }
+    } catch (err: any) {
+      showAlert("error", "Kesalahan Sistem", err.message || "Terjadi kesalahan koneksi.");
+    } finally {
+      setUpdatingWa(false);
     }
   };
 
@@ -487,17 +532,51 @@ export default function AssetsPage() {
                         )}
                       </TableCell>
                       <TableCell>
-                        <div className="flex items-center gap-2 group/wa cursor-pointer">
+                        <div 
+                          onClick={() => setEditWaModal({
+                            open: true,
+                            nama_stasiun: asset.nama_stasiun,
+                            operator_wa: asset.operator_wa || "",
+                            pln_id: asset.pln_id,
+                            orbit_id: asset.orbit_id,
+                          })}
+                          className="flex items-center gap-2 group/wa cursor-pointer hover:bg-slate-100/80 p-2 rounded-xl transition-all w-fit"
+                          title="Klik untuk edit nomor WhatsApp operator"
+                        >
                           <div className="p-1.5 bg-emerald-50 rounded-lg group-hover/wa:bg-emerald-500 transition-colors">
                             <MessageCircle className="h-4 w-4 text-emerald-500 group-hover/wa:text-white" />
                           </div>
-                          <span className="text-sm font-bold text-slate-600">{asset.operator_wa}</span>
+                          <span className="text-sm font-bold text-slate-600 group-hover/wa:text-blue-600 transition-colors">
+                            {asset.operator_wa || <span className="text-xs text-rose-400 italic">Belum ada nomor WA</span>}
+                          </span>
+                          <Pencil className="h-3.5 w-3.5 text-slate-400 group-hover/wa:text-blue-500 opacity-0 group-hover/wa:opacity-100 transition-opacity ml-1" />
                         </div>
                       </TableCell>
                       <TableCell className="text-center pr-8">
-                        <Button variant="ghost" size="icon" className="text-slate-300 hover:text-rose-500 hover:bg-rose-50 rounded-xl transition-all">
-                          <Trash2 className="h-5 w-5" />
-                        </Button>
+                        <div className="flex items-center justify-center gap-1">
+                          <Button 
+                            variant="ghost" 
+                            size="icon" 
+                            onClick={() => setEditWaModal({
+                              open: true,
+                              nama_stasiun: asset.nama_stasiun,
+                              operator_wa: asset.operator_wa || "",
+                              pln_id: asset.pln_id,
+                              orbit_id: asset.orbit_id,
+                            })}
+                            title="Edit Kontak WA Operator"
+                            className="text-slate-400 hover:text-blue-600 hover:bg-blue-50 rounded-xl transition-all h-9 w-9"
+                          >
+                            <Pencil className="h-4 w-4" />
+                          </Button>
+                          <Button 
+                            variant="ghost" 
+                            size="icon" 
+                            className="text-slate-300 hover:text-rose-500 hover:bg-rose-50 rounded-xl transition-all h-9 w-9"
+                          >
+                            <Trash2 className="h-4 w-4" />
+                          </Button>
+                        </div>
                       </TableCell>
                     </TableRow>
                   ))
@@ -523,6 +602,74 @@ export default function AssetsPage() {
         <span>Unit Stasiun Terdaftar: {filteredAssets.length}</span>
         <span>Operational Assets Manager • Ver 1.0.5</span>
       </div>
+
+      {/* EDIT OPERATOR WA MODAL */}
+      <Dialog open={editWaModal.open} onOpenChange={(open) => setEditWaModal(prev => ({ ...prev, open }))}>
+        <DialogContent className="sm:max-w-[450px] rounded-[2.5rem] p-0 overflow-hidden border-none shadow-2xl">
+          <div className="premium-gradient p-8 text-white">
+            <DialogHeader>
+              <div className="h-12 w-12 rounded-2xl bg-white/20 flex items-center justify-center mb-3 shadow-md">
+                <Phone className="h-6 w-6 text-white" />
+              </div>
+              <DialogTitle className="text-2xl font-black tracking-tight">Edit Nomor Kontak WA</DialogTitle>
+              <DialogDescription className="text-blue-100 font-medium text-xs mt-1">
+                Perbarui nomor WhatsApp penanggung jawab / operator untuk stasiun ini.
+              </DialogDescription>
+            </DialogHeader>
+          </div>
+
+          <div className="p-8">
+            <form onSubmit={handleSaveOperatorWa} className="space-y-6">
+              <div className="space-y-2">
+                <Label className="font-black text-[10px] uppercase tracking-widest text-slate-400 pl-1">
+                  ID / Nama Stasiun
+                </Label>
+                <div className="h-14 px-5 rounded-2xl border border-slate-100 bg-slate-100/60 flex items-center font-black text-slate-800 text-base">
+                  {editWaModal.nama_stasiun}
+                </div>
+              </div>
+
+              <div className="space-y-2">
+                <Label htmlFor="edit_operator_wa" className="font-black text-[10px] uppercase tracking-widest text-slate-400 pl-1 flex items-center gap-2">
+                  Nomor WhatsApp Operator <span className="text-rose-500">*</span>
+                </Label>
+                <div className="relative">
+                  <MessageCircle className="absolute left-5 top-1/2 -translate-y-1/2 h-5 w-5 text-emerald-500" />
+                  <Input 
+                    id="edit_operator_wa" 
+                    placeholder="e.g. 0878XXXXXXXX / 628XXXXXXXX" 
+                    value={editWaModal.operator_wa}
+                    onChange={(e) => setEditWaModal({ ...editWaModal, operator_wa: e.target.value })}
+                    required 
+                    className="h-14 pl-14 rounded-2xl border-slate-200 bg-slate-50/50 focus:bg-white transition-all font-mono font-bold text-slate-800 text-base"
+                  />
+                </div>
+                <p className="text-[11px] text-slate-400 font-medium pl-1">
+                  Format disarankan menggunakan awalan 08... atau 628...
+                </p>
+              </div>
+
+              <DialogFooter className="pt-2 flex gap-3">
+                <Button 
+                  type="button" 
+                  variant="outline" 
+                  onClick={() => setEditWaModal(prev => ({ ...prev, open: false }))}
+                  className="flex-1 h-14 rounded-2xl font-black uppercase text-xs tracking-widest text-slate-600 border-slate-200"
+                >
+                  Batal
+                </Button>
+                <Button 
+                  type="submit" 
+                  disabled={updatingWa || !editWaModal.operator_wa.trim()}
+                  className="flex-1 premium-gradient hover:opacity-95 text-white h-14 rounded-2xl font-black uppercase text-xs tracking-widest shadow-xl shadow-blue-500/20 active:scale-95 transition-all"
+                >
+                  {updatingWa ? <Loader2 className="h-5 w-5 animate-spin mr-2" /> : "Simpan Nomor WA"}
+                </Button>
+              </DialogFooter>
+            </form>
+          </div>
+        </DialogContent>
+      </Dialog>
 
       {/* SUCCESS / ERROR ALERT MODAL */}
       <Dialog open={alertConfig.open} onOpenChange={(open) => setAlertConfig(prev => ({ ...prev, open }))}>

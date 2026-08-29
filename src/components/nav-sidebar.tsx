@@ -2,7 +2,7 @@
 
 import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
-import { LayoutDashboard, History, Users, LogOut, Zap, Tag, CreditCard, X, Wallet, Receipt } from "lucide-react";
+import { LayoutDashboard, History, Users, LogOut, Zap, Tag, CreditCard, X, Wallet, Receipt, Send } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
 
@@ -30,6 +30,7 @@ export function NavSidebar({ username, role, onClose }: NavSidebarProps) {
     { name: "Keuangan", href: "/finance", icon: CreditCard },
     { name: "Topup", href: "/topup", icon: Wallet },
     { name: "Struk Transaksi", href: "/struk", icon: Receipt },
+    { name: "WA Blast", href: "/wa-blast", icon: Send },
     { name: "History", href: "/history", icon: History },
   ];
 

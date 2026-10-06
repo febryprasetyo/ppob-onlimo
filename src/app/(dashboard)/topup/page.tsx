@@ -1191,8 +1191,15 @@ export default function TopupMerchantPage() {
                                   <span className="text-[9px] font-black uppercase tracking-widest">PENDING</span>
                                 </div>
                               ) : (
-                                <div className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full bg-rose-50 text-rose-600 border border-rose-100 shadow-sm">
-                                  <span className="text-[9px] font-black uppercase tracking-widest">FAILED</span>
+                                <div className="flex flex-col items-center gap-0.5">
+                                  <div className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full bg-rose-50 text-rose-600 border border-rose-100 shadow-sm">
+                                    <span className="text-[9px] font-black uppercase tracking-widest">FAILED</span>
+                                  </div>
+                                  {item.supplier_message && (
+                                    <span className="text-[9px] font-bold text-rose-500 max-w-[130px] truncate tracking-tight cursor-help" title={item.supplier_message}>
+                                      {item.supplier_message}
+                                    </span>
+                                  )}
                                 </div>
                               )}
                             </TableCell>

@@ -35,27 +35,32 @@ export async function POST(req: Request) {
       const trx = await db("trx_pln").where("ref_id", ref_id).first();
       if (!trx) return NextResponse.json({ message: "TRX not found" });
 
+      if (trx.status === "SUCCESS") {
+        return NextResponse.json({ message: "Already processed" }, { status: 200 });
+      }
+
       const asset = await db("assets_pln").where("id", trx.asset_id).first();
 
       let finalStatus = "PENDING";
-      // Check for RC=00 OR status text variations
       if (rc === '00' || statusLower === "success" || statusLower === "sukses" || statusLower === "berhasil") {
         finalStatus = "SUCCESS";
-      } else if (rc === '01' || rc === '02' || statusLower === "fail" || statusLower === "gagal") {
+      } else if (rc === '03' || statusLower === "pending" || statusLower === "proses") {
+        finalStatus = "PENDING";
+      } else if (rc || statusLower === "fail" || statusLower === "gagal" || statusLower === "batal") {
         finalStatus = "FAILED";
       }
 
       const updateData: any = {
         status: finalStatus,
-        token_sn: sn,
-        price: price,
-        message: message,
+        token_sn: sn || trx.token_sn,
+        price: price || trx.price,
+        message: message || trx.message,
         raw_response: JSON.stringify(data),
         updated_at: db.fn.now(),
       };
 
-      if (finalStatus === "SUCCESS") {
-        const fullTrx = { ...trx, token_sn: sn };
+      if (finalStatus === "SUCCESS" && asset && !trx.wa_sent_at) {
+        const fullTrx = { ...trx, token_sn: sn || trx.token_sn };
         const msg = await generateTRXMessage("PLN", asset, fullTrx);
         const waSent = await sendWAMessage(asset.operator_wa, msg);
         if (waSent) {
@@ -66,35 +71,42 @@ export async function POST(req: Request) {
       await db("trx_pln").where("ref_id", ref_id).update(updateData);
       
       // Update asset status
-      await db("assets_pln").where({ id: trx.asset_id }).update({
-        last_trx_status: finalStatus,
-        last_trx_at: db.fn.now()
-      });
+      if (asset) {
+        await db("assets_pln").where({ id: trx.asset_id }).update({
+          last_trx_status: finalStatus,
+          last_trx_at: db.fn.now()
+        });
+      }
     } else if (normalizedRefId.startsWith("ORB")) {
       // Logic for Orbit
       const trx = await db("trx_orbit").where("ref_id", ref_id).first();
       if (!trx) return NextResponse.json({ message: "TRX not found" });
 
+      if (trx.status === "SUCCESS") {
+        return NextResponse.json({ message: "Already processed" }, { status: 200 });
+      }
+
       const asset = await db("assets_orbit").where("id", trx.asset_id).first();
 
       let finalStatus = "PENDING";
-      // Check for RC=00 OR status text variations
       if (rc === '00' || statusLower === "success" || statusLower === "sukses" || statusLower === "berhasil") {
         finalStatus = "SUCCESS";
-      } else if (rc === '01' || rc === '02' || statusLower === "fail" || statusLower === "gagal") {
+      } else if (rc === '03' || statusLower === "pending" || statusLower === "proses") {
+        finalStatus = "PENDING";
+      } else if (rc || statusLower === "fail" || statusLower === "gagal" || statusLower === "batal") {
         finalStatus = "FAILED";
       }
 
       const updateData: any = {
         status: finalStatus,
-        sn_ref: sn,
-        price: price,
-        message: message,
+        sn_ref: sn || trx.sn_ref,
+        price: price || trx.price,
+        message: message || trx.message,
         raw_response: JSON.stringify(data),
         updated_at: db.fn.now(),
       };
 
-      if (finalStatus === "SUCCESS") {
+      if (finalStatus === "SUCCESS" && asset && !trx.wa_sent_at) {
         const msg = await generateTRXMessage("ORBIT", asset, trx);
         const waSent = await sendWAMessage(asset.operator_wa, msg);
         if (waSent) {
@@ -105,29 +117,84 @@ export async function POST(req: Request) {
       await db("trx_orbit").where("ref_id", ref_id).update(updateData);
 
       // Update asset status
-      await db("assets_orbit").where({ id: trx.asset_id }).update({
-        last_trx_status: finalStatus,
-        last_trx_at: db.fn.now()
-      });
+      if (asset) {
+        await db("assets_orbit").where({ id: trx.asset_id }).update({
+          last_trx_status: finalStatus,
+          last_trx_at: db.fn.now()
+        });
+      }
     } else if (normalizedRefId.startsWith("EMN")) {
       // Logic for E-Money
       const trx = await db("trx_emoney").where("ref_id", ref_id).first();
       if (!trx) return NextResponse.json({ message: "TRX not found" });
 
+      if (trx.status === "SUCCESS") {
+        return NextResponse.json({ message: "Already processed" }, { status: 200 });
+      }
+
       let finalStatus = "PENDING";
       if (rc === '00' || statusLower === "success" || statusLower === "sukses" || statusLower === "berhasil") {
         finalStatus = "SUCCESS";
-      } else if (rc === '01' || rc === '02' || statusLower === "fail" || statusLower === "gagal") {
+      } else if (rc === '03' || statusLower === "pending" || statusLower === "proses") {
+        finalStatus = "PENDING";
+      } else if (rc || statusLower === "fail" || statusLower === "gagal" || statusLower === "batal") {
         finalStatus = "FAILED";
       }
 
       await db("trx_emoney").where("ref_id", ref_id).update({
         status: finalStatus,
-        sn: sn,
-        price: price,
-        message: message,
+        sn: sn || trx.sn,
+        price: price || trx.price,
+        message: message || trx.message,
         raw_response: JSON.stringify(data),
         updated_at: db.fn.now(),
+      });
+    } else if (normalizedRefId.startsWith("TOP") || normalizedRefId.startsWith("INQ")) {
+      // Logic for Generic Topup (topup_transactions)
+      const tx = await db("topup_transactions").where("reference", ref_id).first();
+      if (!tx) return NextResponse.json({ message: "Topup TRX not found" });
+
+      if (tx.status === "SUCCESS") {
+        return NextResponse.json({ message: "Already processed" }, { status: 200 });
+      }
+
+      let finalStatus = "PENDING";
+      if (rc === '00' || statusLower === "success" || statusLower === "sukses" || statusLower === "berhasil") {
+        finalStatus = "SUCCESS";
+      } else if (rc === '03' || statusLower === "pending" || statusLower === "proses") {
+        finalStatus = "PENDING";
+      } else if (rc || statusLower === "fail" || statusLower === "gagal" || statusLower === "batal") {
+        finalStatus = "FAILED";
+      }
+
+      let token = null;
+      if (sn) {
+        const match = sn.match(/\b(\d{4}[-\s]?\d{4}[-\s]?\d{4}[-\s]?\d{4}[-\s]?\d{4})\b/);
+        if (match) token = match[1];
+      }
+
+      await db.transaction(async (trxDb) => {
+        await trxDb("topup_transactions")
+          .where({ reference: ref_id })
+          .update({
+            status: finalStatus,
+            supplier_reference: sn || tx.supplier_reference,
+            serial_number: sn || tx.serial_number,
+            token: token || tx.token,
+            supplier_message: message || `Status: ${finalStatus}`,
+            raw_response: JSON.stringify(data),
+            completed_at: finalStatus !== "PENDING" ? db.fn.now() : null,
+            updated_at: db.fn.now(),
+          });
+
+        await trxDb("topup_transaction_events").insert({
+          transaction_reference: ref_id,
+          event_type: "WEBHOOK_STATUS_UPDATE",
+          old_status: tx.status,
+          new_status: finalStatus,
+          actor: "DIGIFLAZZ_WEBHOOK",
+          payload_redacted: JSON.stringify({ rc, message, sn }),
+        });
       });
     }
 

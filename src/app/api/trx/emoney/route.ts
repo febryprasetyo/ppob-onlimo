@@ -36,18 +36,27 @@ export async function POST(req: Request) {
     const data = result.data || {};
 
     // 3. Update status based on response
+    const rc = String(data.rc || "").trim();
+    const statusStr = String(data.status || "").toLowerCase().trim();
+
     let status = "PENDING";
-    if (data.rc === '00' || data.status === 'Sukses' || data.status === 'Success') {
+    if (rc === "00" || statusStr === "sukses" || statusStr === "success") {
       status = "SUCCESS";
-    } else if (data.rc === '01' || data.rc === '02') {
+    } else if (rc === "03" || statusStr === "pending" || statusStr === "proses") {
+      status = "PENDING";
+    } else if (rc || statusStr === "gagal" || statusStr === "batal" || statusStr === "failed") {
       status = "FAILED";
     }
+
+    const detailedMessage = data.message || result.message
+      ? (rc && rc !== "00" && !(data.message || result.message).includes("RC") ? `${data.message || result.message} (RC ${rc})` : (data.message || result.message))
+      : (status === "FAILED" ? (rc ? `Transaksi Gagal (RC ${rc})` : "Transaksi Gagal") : "Transaksi Diproses");
 
     await db("trx_emoney").where({ ref_id }).update({
       status,
       sn: data.sn || data.ref_id,
       price: data.price || 0,
-      message: data.message || result.message,
+      message: detailedMessage,
       raw_response: JSON.stringify(result),
       updated_at: db.fn.now()
     });

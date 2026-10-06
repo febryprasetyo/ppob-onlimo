@@ -400,11 +400,11 @@ export class TopupOrchestrator {
       throw new Error("Transaksi tidak ditemukan");
     }
 
-    if (tx.status !== "PENDING" && tx.status !== "SUBMITTED") {
+    if (tx.status === "SUCCESS" && (tx.serial_number || tx.token)) {
       return {
-        success: tx.status === "SUCCESS",
+        success: true,
         transaction: tx,
-        message: `Status transaksi sudah final: ${tx.status}`,
+        message: `Status transaksi sudah Sukses`,
       };
     }
 

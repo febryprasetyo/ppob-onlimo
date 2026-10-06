@@ -164,14 +164,21 @@ export function AssetTable({ assets, type, onSuccess }: AssetTableProps) {
     } else if (data.rc === "03") {
       status = "pending";
       title = "Transaksi Diproses";
+    } else if (data.rc) {
+      // Jika ada RC tapi bukan 00 dan bukan 03 (misal RC 85, 41, dll) -> PASTI GAGAL
+      status = "failed";
+      title = "Transaksi Ditolak Supplier";
     } 
-    // Fallback ke string status jika RC tidak ada (antisipasi simulasi)
+    // Fallback ke string status jika RC tidak ada sama sekali
     else if (data.status === "Sukses" || data.status === "Success") {
       status = "success";
       title = "Transaksi Berhasil";
-    } else if (data.status === "Pending") {
+    } else if (data.status === "Pending" || data.status === "Proses") {
       status = "pending";
       title = "Transaksi Diproses";
+    } else {
+      status = "failed";
+      title = "Transaksi Gagal";
     }
     
     setResultModal({

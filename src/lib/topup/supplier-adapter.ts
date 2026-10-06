@@ -14,6 +14,40 @@ export interface SupplierAdapter {
   checkStatus(params: { sku: string; customerNo: string; refId: string; flowType?: "PREPAID" | "POSTPAID" }): Promise<SupplierResult>;
 }
 
+function parseDigiflazzTransactionStatus(data: any): {
+  status: TopupTransactionStatus;
+  token: string | null;
+} {
+  const rc = String(data.rc || "").trim();
+  const statusStr = String(data.status || "").toLowerCase().trim();
+
+  let status: TopupTransactionStatus = "PENDING";
+  if (rc === "00" || statusStr === "sukses" || statusStr === "success") {
+    status = "SUCCESS";
+  } else if (rc === "03" || statusStr === "pending" || statusStr === "proses") {
+    status = "PENDING";
+  } else if (rc === "01" || rc === "02" || statusStr === "gagal" || statusStr === "batal" || statusStr === "failed" || (rc && rc !== "00" && rc !== "03")) {
+    status = "FAILED";
+  }
+
+  // Token extraction (20 digits, PLN token formatted with/without dashes)
+  let token: string | null = null;
+  const sn = String(data.sn || "");
+  if (sn) {
+    const match = sn.match(/\b(\d{4}[-\s]?\d{4}[-\s]?\d{4}[-\s]?\d{4}[-\s]?\d{4})\b/);
+    if (match) {
+      token = match[1];
+    } else {
+      const cleanDigits = sn.replace(/\D/g, "");
+      if (cleanDigits.length >= 20) {
+        token = cleanDigits.substring(0, 20);
+      }
+    }
+  }
+
+  return { status, token };
+}
+
 export class DigiflazzSupplierAdapter implements SupplierAdapter {
   private generateSign(ref: string): string {
     return getDigiflazzSign(ref);
@@ -45,20 +79,15 @@ export class DigiflazzSupplierAdapter implements SupplierAdapter {
       const resJson = await response.json();
       const data = resJson.data || {};
 
-      let status: TopupTransactionStatus = "PENDING";
-      if (data.rc === "00" || data.status === "Sukses" || data.status === "Success") {
-        status = "SUCCESS";
-      } else if (data.rc === "01" || data.rc === "02" || data.rc === "03") {
-        status = "FAILED";
-      }
+      const { status, token } = parseDigiflazzTransactionStatus(data);
 
       return {
         success: status === "SUCCESS",
         status,
         rc: data.rc,
-        message: data.message || resJson.message || "Transaksi terkirim",
+        message: data.message || resJson.message || (status === "PENDING" ? "Transaksi Pending" : "Transaksi terkirim"),
         sn: data.sn || null,
-        token: (data.sn && data.sn.length === 20 && /^\d+$/.test(data.sn)) ? data.sn : null,
+        token,
         price: data.price || 0,
         raw: resJson,
       };
@@ -207,12 +236,7 @@ export class DigiflazzSupplierAdapter implements SupplierAdapter {
       const resJson = await response.json();
       const data = resJson.data || {};
 
-      let status: TopupTransactionStatus = "PENDING";
-      if (data.rc === "00" || data.status === "Sukses" || data.status === "Success") {
-        status = "SUCCESS";
-      } else if (data.rc === "01" || data.rc === "02" || data.rc === "03") {
-        status = "FAILED";
-      }
+      const { status } = parseDigiflazzTransactionStatus(data);
 
       // Dev sandbox simulation fallback
       if (!IS_PROD && status === "FAILED" && (data.rc === "41" || data.rc === "02" || resJson.message?.includes("Testing"))) {
@@ -230,7 +254,7 @@ export class DigiflazzSupplierAdapter implements SupplierAdapter {
         success: status === "SUCCESS",
         status,
         rc: data.rc,
-        message: data.message || resJson.message || "Pembayaran tagihan diproses",
+        message: data.message || resJson.message || (status === "PENDING" ? "Transaksi Pending" : "Pembayaran tagihan diproses"),
         sn: data.sn || null,
         price: data.price || 0,
         selling_price: data.selling_price || 0,
@@ -345,12 +369,7 @@ export class DigiflazzSupplierAdapter implements SupplierAdapter {
       const resJson = await response.json();
       const data = resJson.data || {};
 
-      let status: TopupTransactionStatus = "PENDING";
-      if (data.rc === "00" || data.status === "Sukses" || data.status === "Success") {
-        status = "SUCCESS";
-      } else if (data.rc === "01" || data.rc === "02" || data.rc === "03") {
-        status = "FAILED";
-      }
+      const { status, token } = parseDigiflazzTransactionStatus(data);
 
       return {
         success: status === "SUCCESS",
@@ -358,7 +377,7 @@ export class DigiflazzSupplierAdapter implements SupplierAdapter {
         rc: data.rc,
         message: data.message || resJson.message || `Status: ${status}`,
         sn: data.sn || null,
-        token: (data.sn && data.sn.length === 20 && /^\d+$/.test(data.sn)) ? data.sn : null,
+        token,
         price: data.price,
         raw: resJson,
       };

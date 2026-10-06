@@ -300,16 +300,26 @@ export function HistoryTable({ data, type }: HistoryTableProps) {
                       <span className="text-base font-black text-emerald-600 tabular-nums">Rp {Number(trx.price).toLocaleString("id-ID")}</span>
                     </TableCell>
                     <TableCell className="text-center">
-                      <Badge
-                        className={cn(
-                          "font-black uppercase tracking-widest text-[9px] px-3 py-1 rounded-xl border-none shadow-sm",
-                          trx.status === "SUCCESS" ? "bg-emerald-50 text-emerald-600 shadow-emerald-500/10" :
-                          trx.status === "FAILED" ? "bg-rose-50 text-rose-600 shadow-rose-500/10" :
-                          "bg-amber-50 text-amber-600 shadow-amber-500/10"
+                      <div className="flex flex-col items-center">
+                        <Badge
+                          className={cn(
+                            "font-black uppercase tracking-widest text-[9px] px-3 py-1 rounded-xl border-none shadow-sm",
+                            trx.status === "SUCCESS" ? "bg-emerald-50 text-emerald-600 shadow-emerald-500/10" :
+                            trx.status === "FAILED" ? "bg-rose-50 text-rose-600 shadow-rose-500/10" :
+                            "bg-amber-50 text-amber-600 shadow-amber-500/10"
+                          )}
+                        >
+                          {trx.status}
+                        </Badge>
+                        {trx.status === "FAILED" && trx.message && (
+                          <span 
+                            className="text-[9px] font-bold text-rose-500 max-w-[130px] truncate mt-1 tracking-tight cursor-help"
+                            title={trx.message}
+                          >
+                            {trx.message}
+                          </span>
                         )}
-                      >
-                        {trx.status}
-                      </Badge>
+                      </div>
                     </TableCell>
                     <TableCell className="text-center">
                       {trx.status !== "SUCCESS" ? (

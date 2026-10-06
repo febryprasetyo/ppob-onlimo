@@ -49,26 +49,33 @@ export async function GET(req: Request) {
     console.log(`<<< CHECK STATUS RESPONSE (${type}):`, JSON.stringify(resJson, null, 2));
 
     // Update DB if status changed
-    // NOTE: RC 00 = Success, RC 01/02 = Failed, RC 03 = Pending
-    if (data.rc === '00' || data.rc === '01' || data.rc === '02') {
-      let finalStatus = "PENDING";
-      if (data.rc === '00') finalStatus = "SUCCESS";
-      if (data.rc === '01' || data.rc === '02') finalStatus = "FAILED";
+    const rc = String(data.rc || "").trim();
+    const statusStr = String(data.status || "").toLowerCase().trim();
 
+    let finalStatus = trx.status;
+    if (rc === "00" || statusStr === "sukses" || statusStr === "success") {
+      finalStatus = "SUCCESS";
+    } else if (rc === "03" || statusStr === "pending" || statusStr === "proses") {
+      finalStatus = "PENDING";
+    } else if (rc || statusStr === "gagal" || statusStr === "batal" || statusStr === "failed") {
+      finalStatus = "FAILED";
+    }
+
+    if (finalStatus !== trx.status || data.sn) {
       console.log(`[Check Status] Updating ${refId} status to ${finalStatus} (RC: ${data.rc})`);
 
       const updateData: any = {
         status: finalStatus,
         price: data.price || trx.price,
-        message: data.message,
+        message: data.message || trx.message,
         raw_response: JSON.stringify(resJson),
         updated_at: db.fn.now()
       };
 
       if (type === "PLN") {
-        updateData.token_sn = data.sn;
+        updateData.token_sn = data.sn || trx.token_sn;
       } else {
-        updateData.sn_ref = data.sn;
+        updateData.sn_ref = data.sn || trx.sn_ref;
       }
 
       await db(table).where({ ref_id: refId }).update(updateData);
